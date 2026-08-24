@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""
+cluster_spatialdata_gpu.py - GPU-accelerated QC, normalize, and cluster a SpatialData zarr.
+
+Uses rapids-singlecell for the compute-heavy steps (filtering, normalization, PCA,
+neighbors, UMAP, and a sweep of Leiden clusterings). Data is moved back to CPU before
+zarr I/O.
+
+There is no highly-variable-gene selection: a MERFISH panel is a few hundred curated
+markers, so every gene is used.
+
+Requires an Apptainer image with rapids-singlecell and a CUDA-capable GPU.
+
+Writes <outdir>/<sample>.zarr plus a timing TSV.
+
+Usage:
+    cluster_spatialdata_gpu.py --sample testis_01 \\
+        --path results/testis_01/create_spatialdata/testis_01.zarr \\
+        --outdir results/testis_01/cluster_spatialdata_gpu
+"""
+
+import argparse
+from pathlib import Path
+
+import rapids_singlecell as rsc
+import spatialdata
+
+from timer import timer, timing_summary
+
+# Leiden resolutions to sweep; one leiden_res_<r> obs column is written per value.
+RESOLUTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
+               1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+
+DEFAULT_MIN_COUNTS = 20
+# Off by default: an upper cut removes the most transcript-rich cells, and in testis
+# those are the ones a spermatogenic staging analysis is about.
+DEFAULT_MAX_COUNTS_QUANTILE = 0
+
+SCALE_MAX_VALUE = 10
+N_PCS = 30
+NEIGHBORS_METRIC = "cosine"
+
+# The table written by create_spatialdata.py.
+TABLE_KEY = "table"
+# Per-cell transcript total, from the MERSCOPE cell metadata. Singular, unlike Xenium's
+# transcript_counts.
+COUNTS_COLUMN = "transcript_count"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="GPU-accelerated clustering of a SpatialData zarr"
+    )
+    parser.add_argument("--sample", required=True, help="Sample identifier")
+    parser.add_argument("--path", required=True, help="Path to input SpatialData zarr")
+    parser.add_argument(
+        "--outdir",
+        default=".",
+        help="Directory to write <sample>.zarr into (default: current directory)",
+    )
+    parser.add_argument(
+        "--min_counts",
+        type=int,
+        default=DEFAULT_MIN_COUNTS,
+        help=f"Drop cells with fewer than this many transcripts (default: {DEFAULT_MIN_COUNTS}).",
+    )
+    parser.add_argument(
+        "--max_counts_quantile",
+        type=float,
+        default=DEFAULT_MAX_COUNTS_QUANTILE,
+        help="Drop cells above this quantile of transcript_count, to remove doublets and "
+        f"segmentation merges. 0 disables (default: {DEFAULT_MAX_COUNTS_QUANTILE}).",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    output_path = outdir / f"{args.sample}.zarr"
+
+    print(f"Sample:  {args.sample}")
+    print(f"Input:   {args.path}")
+    print(f"Output:  {output_path}")
+    print(f"Res:     {', '.join(f'{r:g}' for r in RESOLUTIONS)}")
+    print(f"Filter:  min_counts={args.min_counts}, "
+          f"max_counts_quantile={args.max_counts_quantile:g}")
+
+    with timer("Read zarr"):
+        sdata = spatialdata.read_zarr(args.path)
+
+    with timer("Extract table"):
+        adata = sdata.tables[TABLE_KEY].copy()
+
+    print(f"Table:   {adata.n_obs:,} cells x {adata.n_vars:,} genes")
+
+    # Record the parameters this step applied, so downstream code reads them from the
+    # object rather than restating them.
+    adata.uns["cluster_min_counts"] = args.min_counts
+    adata.uns["cluster_max_counts_quantile"] = args.max_counts_quantile
+    adata.uns["cluster_resolutions"] = RESOLUTIONS
+
+    # merscope() returns int64 counts, and the rapids QC kernels return zeros for int64
+    # input instead of erroring — every cell then reads as empty and gets filtered out.
+    adata.X = adata.X.astype("float32")
+
+    with timer("Move to GPU"):
+        rsc.get.anndata_to_GPU(adata)
+
+    with timer("Filter"):
+        n_before = adata.n_obs
+        # Quantile on the unfiltered table, before min_counts removes the low tail.
+        max_counts = (
+            float(adata.obs[COUNTS_COLUMN].quantile(args.max_counts_quantile))
+            if args.max_counts_quantile else None
+        )
+        rsc.pp.filter_cells(adata, min_counts=args.min_counts)
+        if max_counts is not None:
+            rsc.pp.filter_cells(adata, max_counts=max_counts)
+            print(f"Upper cut at q{args.max_counts_quantile:g} = {max_counts:,.0f} transcripts.")
+
+    print(f"Filtered {n_before - adata.n_obs:,} low-quality cells.")
+    print(f"Retained {adata.n_obs:,} cells x {adata.n_vars:,} genes.")
+
+    with timer("Normalize"):
+        adata.layers["counts"] = adata.X.copy()
+        # No target_sum, so the default applies: the median pre-normalization cell total.
+        # A fixed target far from the panel's own scale scales every cell by a factor
+        # inversely proportional to its depth, and log1p carries that straight into the
+        # values. The cost is that lognorm is a per-sample scale, so anything comparing
+        # across samples normalizes from layers["counts"] itself.
+        rsc.pp.normalize_total(adata, inplace=True)
+        rsc.pp.log1p(adata)
+        # Preserved before scaling overwrites X; downstream annotation reads this.
+        adata.layers["lognorm"] = adata.X.copy()
+
+    with timer("Scale"):
+        rsc.pp.scale(adata, zero_center=False, max_value=SCALE_MAX_VALUE)
+
+    with timer("PCA"):
+        rsc.pp.pca(adata, n_comps=N_PCS, random_state=0)
+
+    with timer("Neighbors"):
+        rsc.pp.neighbors(adata, metric=NEIGHBORS_METRIC, random_state=0)
+
+    with timer("UMAP"):
+        rsc.tl.umap(adata, random_state=0)
+
+    # Sweep resolutions rather than committing to one: the neighbour graph is already
+    # built, so each extra resolution only re-runs community detection on it.
+    for res in RESOLUTIONS:
+        with timer(f"Leiden res={res:g}"):
+            rsc.tl.leiden(
+                adata,
+                resolution=res,
+                key_added=f"leiden_res_{res:.2f}",
+                random_state=0,
+            )
+
+    # rapids-singlecell keeps arrays on GPU; zarr I/O needs them back on the host.
+    with timer("Move to CPU"):
+        rsc.get.anndata_to_CPU(adata)
+
+    with timer("Write zarr"):
+        sdata.tables[TABLE_KEY] = adata
+        sdata.write(output_path, overwrite=True)
+
+    print(f"Written to {output_path}")
+
+    timing_summary(outdir / f"{args.sample}.cluster_spatialdata_gpu.timing.tsv")
+
+
+if __name__ == "__main__":
+    main()

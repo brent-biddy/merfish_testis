@@ -1,0 +1,18 @@
+# Data and outputs are never committed — they are reproducible from bin/ + assets/.
+data/
+results/
+results_*/
+work/
+.nextflow/
+.nextflow.log*
+
+# Quarto / Jupyter
+*.quarto_ipynb
+.quarto/
+**/*_files/
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
