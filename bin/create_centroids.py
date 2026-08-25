@@ -16,7 +16,9 @@ store is log1p(X / n_cells).
 Groups by every _v1 column by default, or by one named obs column with --group_by.
 Requires layers["counts"], which cluster_spatialdata_gpu.py writes.
 
-Writes <outdir>/<sample>.centroids.h5ad plus a timing TSV.
+Writes <outdir>/<sample>.centroids.h5ad plus a timing TSV, or
+<outdir>/<sample>.centroids_<column>.* for a --group_by run, so the two can sit side
+by side.
 
 Usage:
     create_centroids.py --sample testis_01 \\
@@ -103,7 +105,10 @@ def main():
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    output_path = outdir / f"{args.sample}.centroids.h5ad"
+
+    # A --group_by run publishes beside a sweep run, so the column goes in the name.
+    stem = f"{args.sample}.centroids_{args.group_by}" if args.group_by else f"{args.sample}.centroids"
+    output_path = outdir / f"{stem}.h5ad"
 
     print(f"Sample:  {args.sample}")
     print(f"Input:   {args.path}")
@@ -156,7 +161,7 @@ def main():
     with timer("Write h5ad"):
         centroids.write_h5ad(output_path)
 
-    timing_summary(outdir / f"{args.sample}.create_centroids.timing.tsv")
+    timing_summary(outdir / f"{stem}.timing.tsv")
 
 
 if __name__ == "__main__":
