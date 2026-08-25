@@ -20,6 +20,7 @@ Usage:
 import argparse
 from pathlib import Path
 
+import pandas as pd
 from spatialdata_io import merscope
 
 from timer import timer, timing_summary
@@ -27,6 +28,35 @@ from timer import timer, timing_summary
 # The function default, pinned here and recorded into the table below so downstream
 # steps read which plane was loaded instead of assuming it.
 Z_LAYER = 3
+
+
+def aligned_region_dir(region_dir, staging_dir):
+    """Return a region directory whose cell_metadata.csv matches cell_by_gene.csv row order.
+
+    merscope() hands both CSVs straight to AnnData, which requires their indexes to match
+    exactly. Some MERSCOPE versions write the two files in different orders, and the load
+    then fails with "Index of obs must match index of X". Returns the input unchanged when
+    the orders already agree.
+    """
+    counts = pd.read_csv(region_dir / "cell_by_gene.csv", index_col=0, dtype=str)
+    metadata = pd.read_csv(region_dir / "cell_metadata.csv", index_col=0, dtype=str)
+
+    if counts.index.equals(metadata.index):
+        return region_dir
+
+    print(f"Reordering cell_metadata.csv to match cell_by_gene.csv ({len(counts):,} cells).")
+
+    # Symlink the rest of the region — the mosaic images are far too large to copy — and
+    # write only the reordered metadata, so the instrument output is never modified.
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    for entry in region_dir.iterdir():
+        if entry.name != "cell_metadata.csv":
+            link = staging_dir / entry.name
+            if not link.exists():
+                link.symlink_to(entry.resolve())
+
+    metadata.loc[counts.index].to_csv(staging_dir / "cell_metadata.csv")
+    return staging_dir
 
 
 def parse_args():
@@ -55,10 +85,12 @@ def main():
     print(f"Output:  {output_path}")
     print(f"Z-layer: {Z_LAYER}")
 
+    region_dir = aligned_region_dir(Path(args.path), outdir / "aligned_region")
+
     # Element names are prefixed with the slide name, so pass the sample id to keep them
     # predictable rather than tied to the run directory name.
     with timer("Read MERSCOPE"):
-        sdata = merscope(path=args.path, slide_name=args.sample, z_layers=Z_LAYER)
+        sdata = merscope(path=region_dir, slide_name=args.sample, z_layers=Z_LAYER)
 
     print("\nElements:")
     for name in sdata.images:
