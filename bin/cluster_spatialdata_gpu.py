@@ -9,7 +9,8 @@ zarr I/O.
 There is no highly-variable-gene selection: a MERFISH panel is a few hundred curated
 markers, so every gene is used.
 
-Requires an Apptainer image with rapids-singlecell and a CUDA-capable GPU.
+Each swept resolution leaves two obs columns, leiden_res_<r>_v0 and leiden_res_<r>_v1.
+v1 is the size ranking and is what downstream steps mean by a cluster id.
 
 Writes <outdir>/<sample>.zarr plus a timing TSV.
 
@@ -27,24 +28,33 @@ import spatialdata
 
 from timer import timer, timing_summary
 
-# Leiden resolutions to sweep; one leiden_res_<r> obs column is written per value.
+# Leiden resolutions to sweep; two obs columns are written per value, leiden_res_<r>_v0
+# and leiden_res_<r>_v1.
 RESOLUTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
                1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
-
-DEFAULT_MIN_COUNTS = 20
-# Off by default: an upper cut removes the most transcript-rich cells, and in testis
-# those are the ones a spermatogenic staging analysis is about.
-DEFAULT_MAX_COUNTS_QUANTILE = 0
 
 SCALE_MAX_VALUE = 10
 N_PCS = 30
 NEIGHBORS_METRIC = "cosine"
 
-# The table written by create_spatialdata.py.
-TABLE_KEY = "table"
-# Per-cell transcript total, from the MERSCOPE cell metadata. Singular, unlike Xenium's
-# transcript_counts.
-COUNTS_COLUMN = "transcript_count"
+
+def relabel_by_size(labels):
+    """Renumber Leiden labels 1..k by descending cluster size, so cluster "1" is the largest.
+
+    This is the v0 -> v1 step: `labels` is leiden's own output and the return value is its
+    size-ranked sibling. Both are kept, so a v1 id can always be traced back.
+
+    Returns an ordered categorical, so plots and tables sort 2 before 10.
+    """
+    largest_first = labels.value_counts().index      # value_counts sorts descending by size
+    ranked_categories = [str(rank) for rank in range(1, len(largest_first) + 1)]
+    size_rank = dict(zip(largest_first, ranked_categories))
+
+    return (
+        labels.map(size_rank)
+        .astype("category")
+        .cat.set_categories(ranked_categories, ordered=True)
+    )
 
 
 def parse_args():
@@ -61,15 +71,15 @@ def parse_args():
     parser.add_argument(
         "--min_counts",
         type=int,
-        default=DEFAULT_MIN_COUNTS,
-        help=f"Drop cells with fewer than this many transcripts (default: {DEFAULT_MIN_COUNTS}).",
+        default=20,
+        help="Drop cells with fewer than this many transcripts (default: %(default)s).",
     )
     parser.add_argument(
         "--max_counts_quantile",
         type=float,
-        default=DEFAULT_MAX_COUNTS_QUANTILE,
+        default=0,
         help="Drop cells above this quantile of transcript_count, to remove doublets and "
-        f"segmentation merges. 0 disables (default: {DEFAULT_MAX_COUNTS_QUANTILE}).",
+        "segmentation merges. 0 disables the cut (default: %(default)s).",
     )
     return parser.parse_args()
 
@@ -92,7 +102,7 @@ def main():
         sdata = spatialdata.read_zarr(args.path)
 
     with timer("Extract table"):
-        adata = sdata.tables[TABLE_KEY].copy()
+        adata = sdata.tables["table"].copy()
 
     print(f"Table:   {adata.n_obs:,} cells x {adata.n_vars:,} genes")
 
@@ -112,8 +122,9 @@ def main():
     with timer("Filter"):
         n_before = adata.n_obs
         # Quantile on the unfiltered table, before min_counts removes the low tail.
+        # transcript_count is singular, unlike Xenium's transcript_counts.
         max_counts = (
-            float(adata.obs[COUNTS_COLUMN].quantile(args.max_counts_quantile))
+            float(adata.obs["transcript_count"].quantile(args.max_counts_quantile))
             if args.max_counts_quantile else None
         )
         rsc.pp.filter_cells(adata, min_counts=args.min_counts)
@@ -151,20 +162,23 @@ def main():
     # Sweep resolutions rather than committing to one: the neighbour graph is already
     # built, so each extra resolution only re-runs community detection on it.
     for res in RESOLUTIONS:
+        leiden_key = f"leiden_res_{res:.2f}_v0"
+        ranked_key = f"leiden_res_{res:.2f}_v1"
         with timer(f"Leiden res={res:g}"):
             rsc.tl.leiden(
                 adata,
                 resolution=res,
-                key_added=f"leiden_res_{res:.2f}",
+                key_added=leiden_key,
                 random_state=0,
             )
+            adata.obs[ranked_key] = relabel_by_size(adata.obs[leiden_key])
 
     # rapids-singlecell keeps arrays on GPU; zarr I/O needs them back on the host.
     with timer("Move to CPU"):
         rsc.get.anndata_to_CPU(adata)
 
     with timer("Write zarr"):
-        sdata.tables[TABLE_KEY] = adata
+        sdata.tables["table"] = adata
         sdata.write(output_path, overwrite=True)
 
     print(f"Written to {output_path}")

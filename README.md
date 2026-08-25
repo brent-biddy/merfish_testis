@@ -71,8 +71,14 @@ apptainer exec docker://babiddy755/python_spatial:1.2.0 \
 ### 2. cluster_spatialdata_gpu
 
 Filters cells, normalizes, runs PCA / neighbors / UMAP, and sweeps Leiden resolutions on
-the GPU with rapids-singlecell, writing one `leiden_res_<r>` obs column per resolution.
-The sweep is 0.1 to 2.0 in steps of 0.1, set in the script.
+the GPU with rapids-singlecell. The sweep is 0.1 to 2.0 in steps of 0.1, set in the script.
+
+Each resolution leaves two obs columns. `leiden_res_<r>_v0` is Leiden's own labelling,
+kept so a cluster can be traced back. `leiden_res_<r>_v1` renumbers those clusters `1..k`
+by descending cell count, so cluster 1 is always the largest. **v1 is what everything
+downstream means by a cluster id** — Leiden's own numbers say nothing about size and are
+not comparable between two resolutions, so a cluster named in a figure or a hand-written
+annotation is named by its v1 id.
 
 There is no highly-variable-gene selection — a MERFISH panel is a few hundred curated
 markers, so every gene is used. Genes are not filtered either.
