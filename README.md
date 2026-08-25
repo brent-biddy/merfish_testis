@@ -101,6 +101,7 @@ nextflow.config  profiles: local (workstation), oscer (slurm)
 bin/             all executable code
 modules/         one file per step: its process and its workflow
 assets/          sample sheets
+assets/reference/  cell type centroids to annotate against; see each file's header
 data/raw/        raw instrument output (not committed)
 ```
 
