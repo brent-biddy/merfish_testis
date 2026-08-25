@@ -6,6 +6,9 @@ work/
 .nextflow/
 .nextflow.log*
 
+# Supplementary workbooks the reference CSVs were derived from; only the CSVs are read.
+assets/reference/*.xlsx
+
 # Quarto / Jupyter
 *.quarto_ipynb
 .quarto/
