@@ -50,6 +50,7 @@ filename prefixes.
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 | `<sample>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
+| 5 | `notebooks/celltype_report.qmd` | `sample, path, centroid_path` | zarr from step 3 and centroids from step 4 | `celltype_report.{pptx,md}` |
 
 ### 1. create_spatialdata
 
@@ -148,6 +149,41 @@ nextflow run main.nf -profile local --step create_centroids --group_by cell_type
     --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
+### 5. celltype_report
+
+A cohort deck and a GitHub-readable document from one notebook, with a section per
+sample: its QC, the clustering, the per-cell calls, what they compose to per cluster, and
+the calls on tissue. A terminal step — nothing consumes it.
+
+Staging is the input contract: the workflow drops every sample's zarr and its centroid
+store beside the notebook and it globs them, taking each sample's id from inside its
+object rather than from the staged filename. Adding a sample needs no edit to the
+notebook.
+
+It reads step 4's handoff sheet, which forwards both the zarr it consumed and the
+centroids it wrote. The centroids are what the cluster similarity figure correlates, so
+the notebook never opens a counts matrix.
+
+Two knobs live at the top of the notebook, both judgments rather than computations. The
+resolution the whole document reads, since the sweep writes twenty and one has to be
+picked; and the share of a cluster's cells one type must take for the cluster to be
+settled on it. A cluster below that is called Ambiguous rather than named on a split
+vote, and gets a slide of its own laying out the evidence.
+
+Clusters carry a second, render-only numbering: `v2` is position down the dendrogram, so
+neighbouring numbers are transcriptionally adjacent and the heatmaps read as a block
+diagonal. Figures are labelled `v1 (v2)`. **`v1` is what a call is written against** — it
+is fixed in the object, while `v2` moves whenever the clustering or the gene set changes.
+
+```bash
+nextflow run main.nf -profile local --step celltype_report \
+    --samplesheet <run>/results/create_centroids_samplesheet.csv
+```
+
+`error: true` is not set, so a failing cell fails the render rather than leaving an error
+slide. Still worth inspecting the deck: `unzip -q celltype_report.pptx` and check the
+slide count and titles.
+
 ## Layout
 
 ```
@@ -155,7 +191,8 @@ main.nf          step dispatch
 nextflow.config  profiles: local (workstation), oscer (slurm)
 bin/             all executable code
 modules/         one file per step: its process and its workflow
-assets/          sample sheets
+notebooks/       report notebooks
+assets/          sample sheets, and the pptx template and lua filter a render needs
 assets/reference/  cell type centroids to annotate against; see each file's header
 data/raw/        raw instrument output (not committed)
 ```

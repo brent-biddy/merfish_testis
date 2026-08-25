@@ -25,13 +25,17 @@ process CREATE_CENTROIDS {
         pattern: '*.{h5ad,tsv}'
 
     input:
-    tuple val(sample), path(zarr)
+    // input_path rides along as a val because inside the task `zarr` resolves to a staged
+    // symlink that means nothing outside this work dir, and the handoff row has to forward
+    // a location the next step can still resolve. celltype_report needs both artifacts --
+    // the centroids for gene-level numbers, the zarr for obs and the embeddings.
+    tuple val(sample), path(zarr), val(input_path)
     path 'timer.py'
 
     output:
     tuple val(sample), path("${centroidStem(sample)}.h5ad"), emit: artifacts
     path "${centroidStem(sample)}.timing.tsv", emit: timings
-    // One `sample,path` line pointing at the published centroid store.
+    // One `sample,path,centroid_path` line: the zarr this consumed, and what it wrote.
     path "${sample}.samplesheet_row.csv", emit: samplesheet_row
 
     script:
@@ -42,7 +46,7 @@ process CREATE_CENTROIDS {
     """
     create_centroids.py ${centroidArgs.join(' ')}
 
-    printf '%s' '${sample},${published}' > ${sample}.samplesheet_row.csv
+    printf '%s' '${sample},${input_path},${published}' > ${sample}.samplesheet_row.csv
     """
 
     stub:
@@ -50,14 +54,14 @@ process CREATE_CENTROIDS {
     touch ${centroidStem(sample)}.h5ad
     touch ${centroidStem(sample)}.timing.tsv
 
-    printf '%s' '${sample},${createCentroidsPublishDir(sample)}/${centroidStem(sample)}.h5ad' > ${sample}.samplesheet_row.csv
+    printf '%s' '${sample},${input_path},${createCentroidsPublishDir(sample)}/${centroidStem(sample)}.h5ad' > ${sample}.samplesheet_row.csv
     """
 }
 
 workflow create_centroids {
     validateAndParseSampleSheet(['sample', 'path'])
-        .map { row -> tuple(row.sample, file(row.path)) }
-        .set { zarrs }               // tuple(sample, clustered zarr)
+        .map { row -> tuple(row.sample, file(row.path), row.path) }
+        .set { zarrs }               // tuple(sample, clustered zarr, its published path)
 
     CREATE_CENTROIDS(zarrs, file("${projectDir}/bin/timer.py"))
 
@@ -68,5 +72,5 @@ workflow create_centroids {
     CREATE_CENTROIDS.out.samplesheet_row
         .map { it.text }             // read row content so collectFile's sort is deterministic
         .collectFile(name: "${sheet}_samplesheet.csv", storeDir: params.outdir,
-                     seed: 'sample,path', newLine: true, sort: true)
+                     seed: 'sample,path,centroid_path', newLine: true, sort: true)
 }
