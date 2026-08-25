@@ -8,6 +8,7 @@
 //   cluster_spatialdata_gpu  samplesheet: sample, path   (path = zarr from create_spatialdata)
 //   annotate_celltypes       samplesheet: sample, path   (path = zarr from cluster_spatialdata_gpu)
 //   create_centroids         samplesheet: sample, path   (path = zarr from either of the two above)
+//   celltype_report          samplesheet: sample, path, centroid_path  (create_centroids' sheet)
 //
 // Each step is independent: there is no chaining inside Nextflow. A step that consumes
 // another's output takes a samplesheet pointing at the prior step's published paths, so
@@ -17,10 +18,11 @@ include { create_spatialdata      } from './modules/create_spatialdata'
 include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
+include { celltype_report         } from './modules/celltype_report'
 
 workflow {
     def valid_steps = ['create_spatialdata', 'cluster_spatialdata_gpu', 'annotate_celltypes',
-                       'create_centroids']
+                       'create_centroids', 'celltype_report']
 
     if (!params.samplesheet)           error "Please provide --samplesheet"
     if (!(params.step in valid_steps)) error "Please provide a valid --step. Valid steps: ${valid_steps.join(', ')}"
@@ -29,4 +31,5 @@ workflow {
     else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu()
     else if (params.step == 'annotate_celltypes')      annotate_celltypes()
     else if (params.step == 'create_centroids')        create_centroids()
+    else if (params.step == 'celltype_report')         celltype_report()
 }
