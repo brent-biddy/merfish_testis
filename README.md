@@ -48,6 +48,7 @@ filename prefixes.
 |------|--------|-------------|-------|--------|
 | 1 | `bin/create_spatialdata.py` | `sample, path` | MERSCOPE region directory | `<sample>.zarr` |
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 | `<sample>.zarr` |
+| 3 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 | `<sample>.centroids.h5ad` |
 
 ### 1. create_spatialdata
 
@@ -92,6 +93,28 @@ nextflow run main.nf -profile local --step cluster_spatialdata_gpu \
 ```
 
 The samplesheet is the handoff sheet step 1 wrote.
+
+### 3. create_centroids
+
+Builds one row per cluster from the clustered zarr, at every resolution in the sweep, so
+later steps and reports never open the counts matrix. Writes a small h5ad holding summed
+CP10K in `X` and summed raw counts in `layers["counts"]`, with `n_cells` per row.
+
+Everything is a **sum, not a mean**, because sums are additive: the profile of any union
+of clusters is the row-wise sum of its members, and `n_cells` sums with it. The reference
+centroids in `assets/reference` are `ln(mean + 1)`, so the comparable value built from
+this store is `log1p(X / n_cells)`.
+
+Its own step rather than part of step 2: Nextflow hashes the task script, so folding it in
+would make a change to the centroid recipe re-run the GPU Leiden sweep.
+
+`--group_by <column>` sums over one named obs column instead of the sweep. A grouping that
+is a union of v1 clusters needs no run at all — sums are additive, so add the rows.
+
+```bash
+nextflow run main.nf -profile local --step create_centroids \
+    --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
+```
 
 ## Layout
 
