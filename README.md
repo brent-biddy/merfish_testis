@@ -48,7 +48,8 @@ filename prefixes.
 |------|--------|-------------|-------|--------|
 | 1 | `bin/create_spatialdata.py` | `sample, path` | MERSCOPE region directory | `<sample>.zarr` |
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 | `<sample>.zarr` |
-| 3 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 | `<sample>.centroids.h5ad` |
+| 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.zarr` |
+| 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
 
 ### 1. create_spatialdata
 
@@ -94,7 +95,30 @@ nextflow run main.nf -profile local --step cluster_spatialdata_gpu \
 
 The samplesheet is the handoff sheet step 1 wrote.
 
-### 3. create_centroids
+### 3. annotate_celltypes
+
+Spearman-correlates every cell against each cell type in a reference centroid table,
+writing one `corr_<cell type>` obs column plus `cell_type_per_cell`, the type a cell
+correlates with most strongly. Genes are matched case-insensitively, so a mouse panel's
+`Acta2` finds a human reference's `ACTA2`; which panel genes were found is written to
+`<sample>.gene_overlap.tsv`.
+
+Correlations are standardized within each cell, because everything downstream compares
+cells with each other and a cell's correlation to every type rises with how many genes it
+captured. That cannot change which type is largest, so the calls are unaffected.
+
+**This step makes no cluster-level call.** A cluster's identity is read off the composition
+of these per-cell calls, which is a judgment made by a person — the reference reports where
+a type would land, not that it was found.
+
+`--reference` selects the table; it defaults to the one in `assets/reference`.
+
+```bash
+nextflow run main.nf -profile local --step annotate_celltypes \
+    --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
+```
+
+### 4. create_centroids
 
 Builds one row per cluster from the clustered zarr, at every resolution in the sweep, so
 later steps and reports never open the counts matrix. Writes a small h5ad holding summed
