@@ -108,11 +108,19 @@ this store is `log1p(X / n_cells)`.
 Its own step rather than part of step 2: Nextflow hashes the task script, so folding it in
 would make a change to the centroid recipe re-run the GPU Leiden sweep.
 
-`--group_by <column>` sums over one named obs column instead of the sweep. A grouping that
-is a union of v1 clusters needs no run at all — sums are additive, so add the rows.
+`--group_by <column>` sums over one named obs column instead of the sweep — cell type,
+once a later step has written it. Those runs are named for the column
+(`<sample>.centroids_<column>.h5ad`, and its own handoff sheet), so they publish beside a
+sweep run rather than displacing it and the step can be re-run for each grouping you want.
+
+A grouping that is a union of v1 clusters needs no run at all — sums are additive, so add
+the rows.
 
 ```bash
 nextflow run main.nf -profile local --step create_centroids \
+    --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
+
+nextflow run main.nf -profile local --step create_centroids --group_by cell_type \
     --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
