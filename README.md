@@ -61,6 +61,21 @@ sample id is written into `table.obs["sample"]` and the loaded z-plane into
 The store holds the mosaic image as a multiscale pyramid, the transcripts as 3D points,
 the cell boundaries as polygons, and the count matrix as the table.
 
+Elements are named `<sample>_<region dir>_<element>`, from the sample id and the raw
+region directory's own name — never from the staged copy below, so staging a sample
+leaves its element names exactly where reading it directly would.
+
+Two things about a region directory are fixed before the read, into a staged copy that
+symlinks everything it is not changing so the instrument output is never touched. A
+`cell_metadata.csv` written in a different row order than `cell_by_gene.csv` is
+reordered, since the reader hands both straight to AnnData. And boundaries written the
+pre-VPT way — a `cell_boundaries/` directory of per-FOV HDF5 files rather than
+`cell_boundaries.parquet` — are converted, at z-index 0, the only plane the reader keeps.
+
+A region with neither form of boundary is an error here. The reader only warns and loads
+no polygons, leaving a store that clusters and annotates perfectly well and has nothing to
+draw a tissue figure from, which is not a thing to discover in step 5.
+
 The script is a plain CLI and runs outside Nextflow unchanged:
 
 ```bash

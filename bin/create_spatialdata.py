@@ -3,9 +3,13 @@
 create_spatialdata.py - Convert a Vizgen MERSCOPE output directory to a SpatialData Zarr store.
 
 Reads a MERSCOPE region directory (cell_by_gene.csv, cell_metadata.csv, the
-cell boundary parquet, the detected transcripts, and the mosaic images) and
-writes it out as a SpatialData Zarr store. No cells or genes are filtered here;
-filtering happens in later steps.
+cell boundaries, the detected transcripts, and the mosaic images) and writes it
+out as a SpatialData Zarr store. No cells or genes are filtered here; filtering
+happens in later steps.
+
+Boundaries written as a pre-VPT cell_boundaries/ directory of per-FOV HDF5 files
+are converted to the cell_boundaries.parquet the reader expects; a region with
+neither is an error rather than a store with no polygons in it.
 
 Later steps read the Zarr store rather than the MERSCOPE directory.
 
@@ -20,7 +24,10 @@ Usage:
 import argparse
 from pathlib import Path
 
+import geopandas as gpd
+import h5py
 import pandas as pd
+from shapely.geometry import MultiPolygon, Polygon
 from spatialdata_io import merscope
 
 from timer import timer, timing_summary
@@ -29,33 +36,109 @@ from timer import timer, timing_summary
 # steps read which plane was loaded instead of assuming it.
 Z_LAYER = 3
 
+# The plane the HDF5 conversion below writes. merscope() keeps only ZIndex 0 out of
+# whatever the boundary file holds, so converting the other planes would write several
+# times the polygons for values no reader ever sees.
+BOUNDARY_Z_INDEX = 0
 
-def aligned_region_dir(region_dir, staging_dir):
-    """Return a region directory whose cell_metadata.csv matches cell_by_gene.csv row order.
 
-    merscope() hands both CSVs straight to AnnData, which requires their indexes to match
-    exactly. Some MERSCOPE versions write the two files in different orders, and the load
-    then fails with "Index of obs must match index of X". Returns the input unchanged when
-    the orders already agree.
+def convert_hdf5_boundaries(boundaries_dir, output_path):
+    """Write per-FOV HDF5 cell boundaries as the single parquet merscope() reads.
+
+    Pre-VPT MERSCOPE runs write cell_boundaries/feature_data_<fov>.hdf5 rather than a
+    cell_boundaries.parquet. merscope() looks only for the parquet: when it is absent it
+    warns, loads no polygons at all, and still names the polygons element as the table's
+    region — a store that reads fine until something asks for the boundaries.
     """
-    counts = pd.read_csv(region_dir / "cell_by_gene.csv", index_col=0, dtype=str)
-    metadata = pd.read_csv(region_dir / "cell_metadata.csv", index_col=0, dtype=str)
+    entity_ids = []
+    geometries = []
 
-    if counts.index.equals(metadata.index):
+    for path in sorted(boundaries_dir.glob("feature_data_*.hdf5")):
+        with h5py.File(path, "r") as handle:
+            for entity_id, cell in handle["featuredata"].items():
+                plane = cell.get(f"zIndex_{BOUNDARY_Z_INDEX}")
+                if plane is None:
+                    continue
+
+                # A cell segmented into several pieces on this plane has p_0, p_1, ... and
+                # a cell absent from it has none. Fewer than three vertices is not a ring;
+                # shapely raises on those rather than returning something invalid.
+                parts = []
+                for part in plane.values():
+                    coordinates = part["coordinates"][0]
+                    if len(coordinates) >= 3:
+                        parts.append(Polygon(coordinates))
+                if not parts:
+                    continue
+
+                entity_ids.append(entity_id)
+                # MultiPolygon even for a single part: merscope() calls MultiPolygon(x.geoms)
+                # on every row, and a bare Polygon has no .geoms.
+                geometries.append(MultiPolygon(parts))
+
+    # EntityID as string, not the int64 a VPT parquet uses: these ids run to 39 digits.
+    # merscope() takes the index from str(EntityID), so both formats land the same.
+    boundaries = gpd.GeoDataFrame(
+        {"EntityID": entity_ids, "ZIndex": BOUNDARY_Z_INDEX, "Geometry": geometries},
+        geometry="Geometry",
+    )
+    boundaries.to_parquet(output_path)
+    print(f"Converted {len(boundaries):,} cell boundaries at z={BOUNDARY_Z_INDEX}.")
+
+
+def staged_region_dir(region_dir, staging_dir):
+    """Return a region directory merscope() can read, staging a fixed-up one if needed.
+
+    Two things it fixes. The CSVs: merscope() hands both straight to AnnData, which
+    requires their indexes to match exactly, and some MERSCOPE versions write them in
+    different orders — the load then fails with "Index of obs must match index of X".
+    The boundaries: older runs write a cell_boundaries/ directory of per-FOV HDF5 files
+    instead of the parquet merscope() reads. Returns the input unchanged when neither
+    applies.
+    """
+    # Only the ids are needed, and cell_by_gene.csv is hundreds of MB of counts.
+    counts_index = pd.read_csv(
+        region_dir / "cell_by_gene.csv", index_col=0, usecols=[0], dtype=str
+    ).index
+    metadata = pd.read_csv(region_dir / "cell_metadata.csv", index_col=0, dtype=str)
+    reorder = not counts_index.equals(metadata.index)
+
+    parquet = region_dir / "cell_boundaries.parquet"
+    hdf5_dir = region_dir / "cell_boundaries"
+    if not parquet.exists() and not hdf5_dir.is_dir():
+        raise FileNotFoundError(
+            f"No cell boundaries in {region_dir}: expected either {parquet.name} or a "
+            f"{hdf5_dir.name}/ directory of per-FOV HDF5 files. Without them merscope() "
+            f"loads no polygons and writes a store no spatial figure can be drawn from."
+        )
+    convert = not parquet.exists()
+
+    if not reorder and not convert:
         return region_dir
 
-    print(f"Reordering cell_metadata.csv to match cell_by_gene.csv ({len(counts):,} cells).")
-
     # Symlink the rest of the region — the mosaic images are far too large to copy — and
-    # write only the reordered metadata, so the instrument output is never modified.
+    # write only what is being fixed, so the instrument output is never modified.
     staging_dir.mkdir(parents=True, exist_ok=True)
+    replaced = set()
+    if reorder:
+        replaced.add("cell_metadata.csv")
+    if convert:
+        replaced.add(hdf5_dir.name)
     for entry in region_dir.iterdir():
-        if entry.name != "cell_metadata.csv":
+        if entry.name not in replaced:
             link = staging_dir / entry.name
             if not link.exists():
                 link.symlink_to(entry.resolve())
 
-    metadata.loc[counts.index].to_csv(staging_dir / "cell_metadata.csv")
+    if reorder:
+        print(f"Reordering cell_metadata.csv to match cell_by_gene.csv ({len(counts_index):,} cells).")
+        metadata.loc[counts_index].to_csv(staging_dir / "cell_metadata.csv")
+
+    if convert:
+        print(f"Converting {hdf5_dir.name}/ to cell_boundaries.parquet.")
+        with timer("Convert boundaries"):
+            convert_hdf5_boundaries(hdf5_dir, staging_dir / "cell_boundaries.parquet")
+
     return staging_dir
 
 
@@ -85,12 +168,21 @@ def main():
     print(f"Output:  {output_path}")
     print(f"Z-layer: {Z_LAYER}")
 
-    region_dir = aligned_region_dir(Path(args.path), outdir / "aligned_region")
+    raw_region_dir = Path(args.path)
+    region_dir = staged_region_dir(raw_region_dir, outdir / "staged_region")
 
-    # Element names are prefixed with the slide name, so pass the sample id to keep them
-    # predictable rather than tied to the run directory name.
+    # Elements are named <slide>_<region>_<element>. Both halves are passed rather than
+    # defaulted: the slide would otherwise be the run directory's name, and the region the
+    # name of whatever directory was read — which is the staging directory for a sample
+    # that needed one. Naming the raw region keeps a staged sample's elements identical to
+    # what the same data would produce read directly.
     with timer("Read MERSCOPE"):
-        sdata = merscope(path=region_dir, slide_name=args.sample, z_layers=Z_LAYER)
+        sdata = merscope(
+            path=region_dir,
+            slide_name=args.sample,
+            region_name=raw_region_dir.name,
+            z_layers=Z_LAYER,
+        )
 
     print("\nElements:")
     for name in sdata.images:
