@@ -585,19 +585,19 @@ for path in ZARRS:
     for key in ("X_umap", "spatial"):
         adata.obsm[key] = np.asarray(adata.obsm[key])
 
-    # The segmented cell boundaries, for the tissue slide. read_zarr leaves images and
-    # points lazy; shapes come into memory, which is what drawing outlines needs. There
-    # are more of them than there are cells -- the clustering filter dropped some -- so
-    # the join below is what pairs them back up.
-    shapes = spatialdata.read_zarr(path).shapes
-    boundaries = shapes[next(key for key in shapes if key.endswith("_polygons"))]
-
     # From inside the object: the workflow stages under indexed names, so the filename is
     # not a reliable source for it.
     sample = str(adata.obs["sample"].iloc[0])
     display(Markdown(f"# {sample}"))
 
     try:
+        # The segmented cell boundaries, for the tissue slide. read_zarr leaves images and
+        # points lazy; shapes come into memory, which is what drawing outlines needs. There
+        # are more of them than there are cells -- the clustering filter dropped some -- so
+        # the join below is what pairs them back up.
+        shapes = spatialdata.read_zarr(path).shapes
+        boundaries = shapes[next(key for key in shapes if key.endswith("_polygons"))]
+
         # ── each cell's correlation with each reference cell type ─────────────────────
         cell_types = list(adata.obs["cell_type_per_cell"].cat.categories)
         correlations = adata.obs[[f"corr_{cell_type}" for cell_type in cell_types]]
