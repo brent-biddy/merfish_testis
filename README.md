@@ -47,7 +47,8 @@ filename prefixes.
 | Step | Script | Samplesheet | Input | Output |
 |------|--------|-------------|-------|--------|
 | 1 | `bin/create_spatialdata.py` | `sample, path` | MERSCOPE region directory | `<sample>.zarr` |
-| 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 | `<sample>.zarr` |
+| 1b | `bin/create_spatialdata_cellpose.py` | `sample, path, vpt_path` | MERSCOPE region directory and its VPT cellpose output | `<sample>.zarr` |
+| 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
 | 5 | `notebooks/celltype_report.qmd` | `sample, path, centroid_path` | zarr from step 3 and centroids from step 4 | `celltype_report.{pptx,md}` |
@@ -84,6 +85,42 @@ apptainer exec docker://babiddy755/python_spatial:1.2.0 \
         --sample testis_01 \
         --path data/raw/testis_01 \
         --outdir results/testis_01/create_spatialdata
+```
+
+### 1b. create_spatialdata_cellpose
+
+An alternative to step 1 for a region that has been re-segmented with cellpose, writing a
+store of the same shape so steps 2 onward read it unchanged. Either step produces a `.zarr`
+and a handoff sheet; a run uses one or the other, not both.
+
+It reads two directories, because a re-segmentation replaces only the cells. The MERSCOPE
+region directory supplies the mosaic images and the detected transcripts. The VPT output
+directory supplies the count matrix, the cell metadata and the boundary polygons:
+
+```
+<region>/Cellpose/cellpose_cell_by_gene.csv
+                  cellpose_cell_metadata.csv
+                  cellpose_micron_space.parquet
+```
+
+`merscope()` reads this natively through its `vpt_outputs` argument, so nothing is
+converted. VPT prefixes its outputs with the segmentation method, which is why all three
+files are named explicitly rather than by pointing the reader at the directory — the
+directory form finds the boundaries and misses both CSVs. A watershed run names its
+boundaries `watershed_micron_space.parquet`; this step reads the cellpose ones.
+
+The boundaries are already polygons in micron space, so unlike the pre-VPT HDF5 form step 1
+converts, there is nothing to build. A missing boundary file is an error here for the same
+reason it is there: the reader only warns.
+
+Which segmentation a store came from is not recoverable from its contents, so
+`table.uns["segmentation"]` and `table.uns["vpt_path"]` record it. Give the two stores
+different sample ids if you want to keep both — they are otherwise indistinguishable in a
+report, and element names are built from the sample id.
+
+```bash
+nextflow run main.nf -profile local --step create_spatialdata_cellpose \
+    --samplesheet assets/samplesheet_cellpose.csv
 ```
 
 ### 2. cluster_spatialdata_gpu
