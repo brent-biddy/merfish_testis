@@ -49,22 +49,23 @@ RESOLUTION = 1.0
 
 # The share of a cluster's cells one cell type must take for the cluster to be settled on
 # it. A cluster that misses it is called Ambiguous rather than named on a split vote.
-PURITY_THRESHOLD = 0.9
+PURITY_THRESHOLD = 0.70
 
 # The reference template is 16:9 at 10 x 5.625in; leave room for a slide title.
 FIGSIZE = (9.0, 4.3)
 
+# A VPT-derived cell_metadata.csv carries volume alone, where a full MERSCOPE one also has
+# transcript_count, solidity and anisotropy. Only the columns every sample has: n_counts is
+# the per-cell transcript total filter_cells wrote, which is what transcript_count is.
 QC_METRICS = {
-    "transcript_count": "Transcripts",
+    "n_counts": "Transcripts",
     "n_genes": "Genes detected",
     "volume": "Cell volume",
-    "solidity": "Solidity",
-    "anisotropy": "Anisotropy",
 }
 # Log axes only where the metric really spans orders of magnitude. n_genes is not one:
 # it is capped by the panel, so it covers a single decade and a log axis there just
 # labels its minor ticks 2 x 10^1 and so on.
-LOG_METRICS = ("transcript_count", "volume")
+LOG_METRICS = ("n_counts", "volume")
 
 # Quartile box inside each violin, sized to stay legible at slide scale.
 VIOLIN_INNER = {"box_width": 2, "whis_width": 1, "marker": "o",
@@ -502,8 +503,10 @@ def resolve_cluster_slide(adata, correlations, sample, cluster, colors):
     present = list(present[present > 0].index)
     contested = present[:2]
 
+    # Two columns per metric along the bottom, so the umap and the scatter above split the
+    # row evenly however many metrics the sample carries.
     fig, axes = plt.subplot_mosaic(
-        [["umap"] * 5 + ["scatter"] * 5,
+        [["umap"] * len(QC_METRICS) + ["scatter"] * len(QC_METRICS),
          [metric for metric in QC_METRICS for _ in range(2)]],
         figsize=(9.0, 6.0), height_ratios=[1.5, 1], constrained_layout=True,
     )
@@ -639,11 +642,6 @@ for path in ZARRS:
             .cat.set_categories([str(rank) for rank in range(1, len(leaf_order) + 1)])
         )
 
-        # ── the per-cell correlations averaged within each cluster ────────────────────
-        # No new correlation: annotate_celltypes already wrote one column per cell type,
-        # and this is their mean per cluster. Where the composition below counts argmax
-        # votes, this keeps how strongly a cluster leans, including cells that voted
-        # elsewhere.
         # ── the per-cell correlations averaged within each cluster ────────────────────
         # No new correlation: annotate_celltypes already wrote one column per cell type,
         # and this is their mean per cluster. Where the composition below counts argmax
