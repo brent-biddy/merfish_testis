@@ -60,7 +60,7 @@ filename prefixes.
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
-| 5 | `notebooks/celltype_report.qmd` | `sample, path, centroid_path` | zarr from step 3 and centroids from step 4 | `reports/<step>_<run_id>/celltype_report.{pptx,md}` |
+| 5 | `--notebook`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the notebook globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<notebook>_<run_id>/<notebook>.{pptx,md}` |
 
 ### 1. create_spatialdata
 
@@ -210,16 +210,27 @@ nextflow run main.nf -profile local --step create_centroids --group_by cell_type
     --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
-### 5. celltype_report
+### 5. quarto_render
 
-A cohort deck and a GitHub-readable document from one notebook, with a section per
-sample: its QC, the clustering, the per-cell calls, what they compose to per cluster, and
-the calls on tissue. A terminal step — nothing consumes it.
+Renders the notebook named by `--notebook` over a cohort. A terminal step — nothing
+consumes it.
 
-Staging is the input contract: the workflow drops every sample's zarr and its centroid
-store beside the notebook and it globs them, taking each sample's id from inside its
-object rather than from the staged filename. Adding a sample needs no edit to the
-notebook.
+The step knows nothing about what it is rendering. It requires only a `sample` column and
+stages every other column's path, one per directory; which of them a notebook wants, and
+what it does with them, is the notebook's own business. **A new report is therefore a new
+notebook and no Nextflow at all** — copy an existing `.qmd`, edit it, and render it.
+
+Staging is the input contract: the workflow drops each samplesheet path into its own
+`input*/` directory beside the notebook and the notebook globs what it needs, taking each
+sample's id from inside its object rather than from the staged filename. One directory per
+file because two samples publish their stores under the same name, and a step that names
+no columns cannot pattern its way around the collision. Adding a sample needs no edit to
+the notebook.
+
+`notebooks/celltype_report.qmd` is the report this pipeline has today: a cohort deck and a
+GitHub-readable document with a section per sample — its QC, the clustering, the per-cell
+calls, what they compose to per cluster, and the calls on tissue. The rest of this section
+describes that notebook rather than the step.
 
 It reads step 4's handoff sheet, which forwards both the zarr it consumed and the
 centroids it wrote. The centroids are what the cluster similarity figure correlates, so
@@ -241,23 +252,29 @@ This is the only step that publishes into the repo. It writes `reports/`, not
 markdown and its figures are committed, being what GitHub renders, and the deck is
 gitignored, being the same content in a format git cannot diff.
 
-Each render gets its own directory, `reports/<step>_<run_id>/`, holding the document, the
-figure directory and the deck together. Quarto writes all three into `--output-dir` and
-the document's links are relative to it, so the directory moves as a unit and renders on
-GitHub wherever it sits. The step leads the name so a listing groups a report type
+Each render gets its own directory, `reports/<notebook>_<run_id>/`, holding the document,
+the figure directory and the deck together. Quarto writes all three into `--output-dir`
+and the document's links are relative to it, so the directory moves as a unit and renders
+on GitHub wherever it sits. The notebook leads the name so a listing groups a report type
 together; the run id ties the render to the results tree it was built from. `--report_id`
 replaces the whole name when the render deserves one of its own:
 
 ```bash
-nextflow run main.nf -profile local --step celltype_report --run_id cellpose_cmp \
+nextflow run main.nf -profile local --step quarto_render --run_id cellpose_cmp \
+    --notebook notebooks/celltype_report.qmd \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
 # -> reports/celltype_report_cellpose_cmp/celltype_report.md
 
-nextflow run main.nf -profile local --step celltype_report \
-    --report_id vizgen_vs_cellpose \
+nextflow run main.nf -profile local --step quarto_render --run_id cellpose_cmp \
+    --notebook notebooks/celltype_report_cellpose.qmd \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
-# -> reports/vizgen_vs_cellpose/celltype_report.md
+# -> reports/celltype_report_cellpose_cmp1/celltype_report_cellpose.md
 ```
+
+The second is a copy of the first notebook with its prose rewritten for that comparison.
+Commentary about one render belongs in the notebook it renders, next to the figure it is
+about — which is why a variant is a copied `.qmd` rather than a note injected from
+outside. The cost is that a fix to a shared figure has to land in each copy.
 
 Because no two renders share a directory, nothing overwrites anything — which also means
 `reports/` accumulates. Prune the ones not worth keeping before committing.
@@ -294,8 +311,8 @@ assets/reference/  cell type centroids to annotate against; see each file's head
 data/raw/        raw instrument output (not committed)
 results/<run_id>/  published step output (not committed)
 reports/README.md  hand-written index of the renders worth keeping
-reports/<step>_<run_id>/  one directory per render: markdown and figures committed,
-                 the deck not
+reports/<notebook>_<run_id>/  one directory per render: markdown and figures
+                 committed, the deck not
 ```
 
 `reports/` is the only output that is committed. Everything else under the repo is

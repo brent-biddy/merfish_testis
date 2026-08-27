@@ -7,8 +7,8 @@ directory can be renamed or moved without breaking anything in it.
 The markdown and the figures are committed, being what GitHub renders. The deck is not,
 being the same content in a format git cannot diff; rebuild it by re-rendering.
 
-A render publishes into `reports/<step>_<run_id>/`, or into `reports/<report_id>/` when
-`--report_id` is given. Nothing overwrites anything, which also means this directory
+A render publishes into `reports/<notebook>_<run_id>/`, or into `reports/<report_id>/`
+when `--report_id` is given. Nothing overwrites anything, which also means this directory
 accumulates: prune the renders not worth keeping before committing them.
 
 ## Index
