@@ -26,18 +26,26 @@ Use `local` on a workstation and `oscer` on the cluster.
 
 Add `-stub` to check wiring without doing the work.
 
-Each invocation gets its own directory, named by a timestamp `run_id`:
+Output publishes beside the code, so a result sits next to the analysis that produced it.
+Each invocation gets its own directory under `results/`, named by a timestamp `run_id`:
 
 ```
-~/merfish_testis_out/<run_id>/results     published output
-~/merfish_testis_out/<run_id>/work        dropped on success
-~/merfish_testis_out/apptainer_cache      shared across runs
+<repo>/results/<run_id>/    published step output, not committed
 ```
 
-Nothing is published into the repo. Because runs never share an output directory, a
-`-stub` run cannot overwrite a real run's results. Pass `--run_id <name>` to pin the
-directory, which `-resume` needs across launches. On `oscer` the root is
-`/scratch/$USER/merfish_testis_out` instead.
+The work dir and the image cache stay out of the repo, being large, churny, and
+reproducible: under `~/merfish_testis_work/` on `local`, and
+`/scratch/$USER/merfish_testis_work/` on `oscer`. Scratch deletes files 14 days after they
+are created no matter how recently they were read, so nothing durable can live there — on
+`oscer` the image cache sits on OURdisk for that reason.
+
+Because runs never share an output directory, a `-stub` run cannot overwrite a real run's
+results. Pass `--run_id <name>` to pin the directory, which `-resume` needs across
+launches.
+
+On `oscer` the repo itself lives on OURdisk, which is permanent and large but **never
+backed up**. The code is safe because it is pushed to GitHub, and `results/` is
+reproducible from it; `data/raw/` is neither, and is worth a second copy.
 
 ## Workflow
 
@@ -247,6 +255,8 @@ notebooks/       report notebooks
 assets/          sample sheets, and the pptx template and lua filter a render needs
 assets/reference/  cell type centroids to annotate against; see each file's header
 data/raw/        raw instrument output (not committed)
+results/<run_id>/  published step output (not committed)
 ```
 
-Run outputs live outside the repo, under `~/merfish_testis_out/<run_id>/`.
+Everything under `results/` is gitignored and reproducible from `bin/` + `assets/` +
+`data/raw/`.
