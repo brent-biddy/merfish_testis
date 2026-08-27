@@ -267,6 +267,10 @@ browses the directory. It is written by hand: a render cannot say what it was fo
 pipeline that wrote the file would overwrite the part worth reading. Add a row when you
 commit a report.
 
+Figure resolution is set per format in the notebook's frontmatter — 144 dpi for the
+committed markdown, read in a ~900px column, and 200 for the projected deck. It cannot go
+back into `rcParams`, which runs after quarto and would override both.
+
 Two segmentations of one sample are compared by giving them distinct sample ids —
 `testis_01_vizgen` and `testis_01_cellpose` — in one samplesheet. Both readers write the
 id into `table.obs["sample"]`, and the notebook takes each section's id from inside the
