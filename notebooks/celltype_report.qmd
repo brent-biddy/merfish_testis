@@ -9,11 +9,18 @@ date: today
 jupyter: python_spatial
 format:
   gfm:
+    # The one figure setting that has to differ per format, so it lives here rather than
+    # in rcParams below. The committed copy is read in a ~900px column, where 200 dpi is
+    # four times the pixels the page can show; 144 stays sharp on a high-DPI screen and
+    # takes a third off the PNGs, which are what this repo carries forever.
+    fig-dpi: 144
     toc: true
     toc-depth: 1
     filters:
       - fold-code.lua      # code folding, which quarto only does for HTML
   pptx:
+    # Projected full-screen, so it keeps the full resolution the gfm copy gives up.
+    fig-dpi: 200
     slide-level: 2
     echo: false
     reference-doc: ouhsc_ppt_template.pptx
@@ -77,9 +84,9 @@ AMBIGUOUS_COLOR = "#cccccc"
 V1_COLUMN = f"leiden_res_{RESOLUTION:.2f}_v1"
 V2_COLUMN = f"leiden_res_{RESOLUTION:.2f}_v2"
 
+# No dpi here: it is set per format in the frontmatter, and a value in rcParams would win
+# over it, since this cell runs after quarto injects its own.
 plt.rcParams.update({
-    "figure.dpi": 200,
-    "savefig.dpi": 200,
     "font.size": 8.5,
     "axes.labelsize": 8.5,
     "axes.titlesize": 9.5,
