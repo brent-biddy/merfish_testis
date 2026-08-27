@@ -56,7 +56,8 @@ filename prefixes.
 | Step | Script | Samplesheet | Input | Output |
 |------|--------|-------------|-------|--------|
 | 1 | `bin/create_spatialdata.py` | `sample, path` | MERSCOPE region directory | `<sample>.zarr` |
-| 1b | `bin/create_spatialdata_cellpose.py` | `sample, path, vpt_path` | MERSCOPE region directory and its VPT cellpose output | `<sample>.zarr` |
+| 1a | `bin/prep_cellpose_vpt.py` | `sample, path, cellpose_path` | MERSCOPE region directory and a merged bespoke cellpose segmentation | `cellpose_*.{csv,parquet}` |
+| 1b | `bin/create_spatialdata_cellpose.py` | `sample, path, vpt_path` | MERSCOPE region directory and VPT cellpose output, from a VPT run or from step 1a | `<sample>.zarr` |
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
@@ -96,11 +97,77 @@ apptainer exec docker://babiddy755/python_spatial:1.2.0 \
         --outdir results/testis_01/create_spatialdata
 ```
 
+### 1a. prep_cellpose_vpt
+
+Converts a cellpose segmentation that was **not** run through VPT into the three files
+step 1b reads, so a store built from it comes out of the same reader as every other
+sample. Only needed for the lab's own cellpose pipeline — `area_cellpose.py` per FOV,
+`merge.py` to stitch — which writes numpy arrays rather than CSVs and a parquet.
+
+It reads the merged segmentation directory:
+
+```
+labels.npy                    (7, height, width) uint32 raw labels, full mosaic pixels
+<sample>-cellp-label-map.npz  raw label -> compact cell id, indexed by label - 1
+<sample>-cell-by-gene.npz     counts, row 0 is background
+<sample>-slicee.pkl           per-label bounding boxes, from ndi.find_objects
+cell-coms.npz                 (z, y, x) centre per cell, mosaic pixels
+cell-vols.npz                 voxels per cell
+```
+
+None of the index conventions are recoverable from the files themselves, so they are
+documented in the script's docstring and taken from `merge.py`:
+
+```
+compact_id = label_map[raw_label - 1]    0 means the label is absent
+counts     = cbg[compact_id]             row 0 is background, not a cell
+centre     = cell_coms[compact_id - 1]
+volume     = cell_vols[compact_id - 1]
+```
+
+**`label_map` is indexed by `label - 1`, not by the label.** `merge.py` builds it over
+`ndi.find_objects` output, whose element *i* describes label *i+1*. Indexing by the label
+happens to agree wherever labels are contiguous and is off by one across every gap, which
+is silent — it gives a cell its neighbour's counts. The step therefore checks the join
+before writing anything: each label's voxels in the raster must equal the volume
+`merge.py` recorded for the cell it maps to, exactly, or the run fails.
+
+The segmentation is 3D over seven z planes and a store holds one, so **each cell's
+boundary is taken from the plane it covers most**. Fixing a single plane instead would
+leave the ~3.5% of cells centred near the top or bottom of the section with counts and a
+centre but no polygon. The cost is that a tissue figure mixes depths rather than showing
+one optical section; which plane each cell came from is written to the metadata and lands
+in the table as `obs["z_plane"]`. Every polygon is written with `ZIndex` 0 regardless,
+because that is the only value `merscope()` keeps.
+
+Coordinates are converted with the region's own `micron_to_mosaic_pixel_transform.csv`
+rather than a restated pixel size. Gene names come from the region's `cell_by_gene.csv`
+header, since the counts array is bare integers — that the blank codewords carry ~20x
+lower counts than real genes is what confirms the order applies.
+
+```bash
+nextflow run main.nf -profile oscer --step prep_cellpose_vpt \
+    --samplesheet assets/samplesheet_cellpose_prep.csv
+
+nextflow run main.nf -profile oscer --step create_spatialdata_cellpose \
+    --samplesheet <run>/results/prep_cellpose_vpt_samplesheet.csv
+```
+
+The handoff sheet it writes is already in step 1b's `sample, path, vpt_path` shape,
+forwarding the region unchanged and naming this step's output as the VPT directory.
+
+The label raster is about 7 GB per plane and the step holds one plane, the counts and the
+traced polygons at once, so `nextflow.config` gives the process 64 GB on `oscer` rather
+than letting the retry ladder find it. It is too large for the `local` profile's default.
+
 ### 1b. create_spatialdata_cellpose
 
 An alternative to step 1 for a region that has been re-segmented with cellpose, writing a
 store of the same shape so steps 2 onward read it unchanged. Either step produces a `.zarr`
 and a handoff sheet; a run uses one or the other, not both.
+
+`--vpt_path` takes either a real VPT output directory or step 1a's output, which is
+written in the same shape for exactly that reason.
 
 It reads two directories, because a re-segmentation replaces only the cells. The MERSCOPE
 region directory supplies the mosaic images and the detected transcripts. The VPT output
