@@ -1,15 +1,27 @@
+// Directory this render publishes into under reports/. Defaults to the step and the run
+// that produced it: the step leads so a listing groups a report type together, and the
+// run id ties the render to the results tree it was built from. --report_id replaces the
+// whole name. Single-sourced because the output block and the stub must agree.
+def reportDir() {
+    params.report_id ?: "${params.step}_${params.run_id}"
+}
+
 // Cell type annotation report over the whole cohort. A terminal fan-in: one task over
 // every sample, producing nothing another step consumes, so there is no publish-dir
 // helper and no handoff samplesheet.
 process CELLTYPE_REPORT {
-    tag "CELLTYPE_REPORT"
+    tag "${stem}"
 
-    // No sample in the path -- one task over the cohort. 'copy' not 'link': the deck is
-    // small and is the thing you scp off the cluster, so it should survive the work dir
-    // being cleaned.
-    publishDir "${params.outdir}/celltype_report", mode: 'copy'
+    // Into the repo rather than under params.outdir: this is the one step whose product is
+    // source-controlled, and reports/ is committed where results/ is not. No sample in the
+    // path -- one task over the cohort. 'copy' not 'link' so what git sees is real files,
+    // and so the deck survives the work dir being cleaned.
+    publishDir "${projectDir}/reports", mode: 'copy'
 
     input:
+    // Passed in rather than read from params inside the process: a helper called from a
+    // directive is resolved as a directive, so it has to be an in-scope variable here.
+    val stem
     // Indexed stageAs is required, not cosmetic: every sample's zarr is published under
     // the same name, so a flat fan-in collides the moment there are two samples.
     path zarrs, stageAs: 'sample*.zarr'
@@ -24,20 +36,21 @@ process CELLTYPE_REPORT {
     path filter
 
     output:
-    path "celltype_report.pptx", emit: deck
-    path "celltype_report.md", emit: document
-    path "celltype_report_files", emit: figures
+    // The whole render as one directory. Quarto writes the document, the deck and the
+    // figure directory into --output-dir together, and the links inside the document are
+    // relative to it, so the directory is what moves rather than any file in it.
+    path "${stem}", emit: report
 
     script:
     """
-    quarto render ${notebook} --output-dir .
+    quarto render ${notebook} --output-dir ${stem}
     """
 
     stub:
     """
-    touch celltype_report.pptx
-    touch celltype_report.md
-    mkdir -p celltype_report_files
+    mkdir -p ${stem}/celltype_report_files
+    touch ${stem}/celltype_report.pptx
+    touch ${stem}/celltype_report.md
     """
 }
 
@@ -60,6 +73,7 @@ workflow celltype_report {
         .set { centroids }
 
     CELLTYPE_REPORT(
+        reportDir(),
         zarrs,
         centroids,
         file("${projectDir}/notebooks/celltype_report.qmd"),

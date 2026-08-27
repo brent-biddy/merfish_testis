@@ -3,6 +3,15 @@ data/
 results/
 results_*/
 work/
+
+# Everything rendered lands in reports/. The markdown and the figures beside it are
+# committed, being the copy GitHub renders; the deck is not, being the same content in
+# a format git has nothing useful to say about. Rebuild it by rendering.
+*.pptx
+
+# The template a deck is rendered from is an input, not a render, so it is committed
+# even though it is a deck.
+!assets/*.pptx
 .nextflow/
 .nextflow.log*
 

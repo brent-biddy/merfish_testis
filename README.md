@@ -31,6 +31,7 @@ Each invocation gets its own directory under `results/`, named by a timestamp `r
 
 ```
 <repo>/results/<run_id>/    published step output, not committed
+<repo>/reports/<name>/    one directory per render, committed and pushed
 ```
 
 The work dir and the image cache stay out of the repo, being large, churny, and
@@ -44,8 +45,8 @@ results. Pass `--run_id <name>` to pin the directory, which `-resume` needs acro
 launches.
 
 On `oscer` the repo itself lives on OURdisk, which is permanent and large but **never
-backed up**. The code is safe because it is pushed to GitHub, and `results/` is
-reproducible from it; `data/raw/` is neither, and is worth a second copy.
+backed up**. The code and `reports/` are safe because they are pushed to GitHub, and
+`results/` is reproducible from them; `data/raw/` is neither, and is worth a second copy.
 
 ## Workflow
 
@@ -59,7 +60,7 @@ filename prefixes.
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
-| 5 | `notebooks/celltype_report.qmd` | `sample, path, centroid_path` | zarr from step 3 and centroids from step 4 | `celltype_report.{pptx,md}` |
+| 5 | `notebooks/celltype_report.qmd` | `sample, path, centroid_path` | zarr from step 3 and centroids from step 4 | `reports/<step>_<run_id>/celltype_report.{pptx,md}` |
 
 ### 1. create_spatialdata
 
@@ -235,14 +236,46 @@ neighbouring numbers are transcriptionally adjacent and the heatmaps read as a b
 diagonal. Figures are labelled `v1 (v2)`. **`v1` is what a call is written against** — it
 is fixed in the object, while `v2` moves whenever the clustering or the gene set changes.
 
+This is the only step that publishes into the repo. It writes `reports/`, not
+`results/<run_id>/`, because its product is the one that is source-controlled: the
+markdown and its figures are committed, being what GitHub renders, and the deck is
+gitignored, being the same content in a format git cannot diff.
+
+Each render gets its own directory, `reports/<step>_<run_id>/`, holding the document, the
+figure directory and the deck together. Quarto writes all three into `--output-dir` and
+the document's links are relative to it, so the directory moves as a unit and renders on
+GitHub wherever it sits. The step leads the name so a listing groups a report type
+together; the run id ties the render to the results tree it was built from. `--report_id`
+replaces the whole name when the render deserves one of its own:
+
 ```bash
-nextflow run main.nf -profile local --step celltype_report \
+nextflow run main.nf -profile local --step celltype_report --run_id cellpose_cmp \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
+# -> reports/celltype_report_cellpose_cmp/celltype_report.md
+
+nextflow run main.nf -profile local --step celltype_report \
+    --report_id vizgen_vs_cellpose \
+    --samplesheet <run>/results/create_centroids_samplesheet.csv
+# -> reports/vizgen_vs_cellpose/celltype_report.md
 ```
 
+Because no two renders share a directory, nothing overwrites anything — which also means
+`reports/` accumulates. Prune the ones not worth keeping before committing.
+
+`reports/README.md` indexes the ones that were kept, and is what GitHub shows when anyone
+browses the directory. It is written by hand: a render cannot say what it was for, and a
+pipeline that wrote the file would overwrite the part worth reading. Add a row when you
+commit a report.
+
+Two segmentations of one sample are compared by giving them distinct sample ids —
+`testis_01_vizgen` and `testis_01_cellpose` — in one samplesheet. Both readers write the
+id into `table.obs["sample"]`, and the notebook takes each section's id from inside the
+object, so the two land as neighbouring sections of a single document with no edit to the
+notebook and no collision in `results/`.
+
 `error: true` is not set, so a failing cell fails the render rather than leaving an error
-slide. Still worth inspecting the deck: `unzip -q celltype_report.pptx` and check the
-slide count and titles.
+slide. Still worth inspecting the deck: `unzip -q reports/<dir>/celltype_report.pptx` and
+check the slide count and titles.
 
 ## Layout
 
@@ -256,7 +289,10 @@ assets/          sample sheets, and the pptx template and lua filter a render ne
 assets/reference/  cell type centroids to annotate against; see each file's header
 data/raw/        raw instrument output (not committed)
 results/<run_id>/  published step output (not committed)
+reports/README.md  hand-written index of the renders worth keeping
+reports/<step>_<run_id>/  one directory per render: markdown and figures committed,
+                 the deck not
 ```
 
-Everything under `results/` is gitignored and reproducible from `bin/` + `assets/` +
-`data/raw/`.
+`reports/` is the only output that is committed. Everything else under the repo is
+gitignored and reproducible from `bin/` + `assets/` + `data/raw/`.
