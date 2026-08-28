@@ -11,3 +11,17 @@ def validateAndParseSampleSheet(List required) {
             row
         }
 }
+
+// The shape every per-sample step takes: tuple(sample, input path). Defined once so main.nf
+// stays dispatch and each converted module's `take:` gets the same thing from either caller.
+def samplePathPairs() {
+    validateAndParseSampleSheet(['sample', 'path'])
+        .map { row -> tuple(row.sample, file(row.path)) }
+}
+
+// create_centroids also needs the input's published location, because the handoff row it
+// writes has to forward something that resolves outside the task that read it.
+def samplePathWithSource() {
+    validateAndParseSampleSheet(['sample', 'path'])
+        .map { row -> tuple(row.sample, file(row.path), row.path) }
+}

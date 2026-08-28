@@ -28,6 +28,7 @@ include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
 include { quarto_render           } from './modules/quarto_render'
+include { samplePathPairs; samplePathWithSource } from './modules/samplesheet'
 
 workflow {
     def valid_steps = ['create_spatialdata', 'prep_cellpose_vpt',
@@ -41,11 +42,11 @@ workflow {
     if (params.step == 'quarto_render' && !params.notebook)
         error "Please provide --notebook: the .qmd to render, e.g. notebooks/celltype_report.qmd"
 
-    if      (params.step == 'create_spatialdata')      create_spatialdata()
+    if      (params.step == 'create_spatialdata')      create_spatialdata(samplePathPairs())
     else if (params.step == 'prep_cellpose_vpt')       prep_cellpose_vpt()
     else if (params.step == 'create_spatialdata_cellpose') create_spatialdata_cellpose()
-    else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu()
-    else if (params.step == 'annotate_celltypes')      annotate_celltypes()
-    else if (params.step == 'create_centroids')        create_centroids()
+    else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(samplePathPairs())
+    else if (params.step == 'annotate_celltypes')      annotate_celltypes(samplePathPairs())
+    else if (params.step == 'create_centroids')        create_centroids(samplePathWithSource())
     else if (params.step == 'quarto_render')           quarto_render()
 }

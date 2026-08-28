@@ -1,40 +1,27 @@
-include { validateAndParseSampleSheet } from './samplesheet'
-
-// Published output directory for this step's per-sample artifacts. Used by the publishDir
-// directive and the emitted samplesheet row, so the two cannot drift apart.
-def annotateCelltypesPublishDir(sample) {
-    "${params.outdir}/${sample}/annotate_celltypes"
-}
-
 // Correlate one sample's cells against the reference cell type centroids.
 process ANNOTATE_CELLTYPES {
     tag "${sample}"
 
-    // pattern publishes the zarr store and the TSVs; it leaves out
-    // <sample>.samplesheet_row.csv.
-    publishDir { annotateCelltypesPublishDir(sample) },
-        mode: 'copy',
-        pattern: '*.{zarr,tsv}'
+    // publish_dir is an input rather than a helper call: the workflow builds it once and
+    // carries it back out, so the location this publishes to and the location the next step
+    // is told to read are the same string.
+    publishDir { publish_dir }, mode: 'copy'
 
     input:
     // stageAs: the input store is named <sample>.zarr too, and would collide with the
     // output of the same name in the task work dir.
-    tuple val(sample), path(zarr, stageAs: 'input.zarr')
+    tuple val(sample), val(publish_dir), path(zarr, stageAs: 'input.zarr')
     path reference
     path 'timer.py'
 
     output:
-    tuple val(sample), path("${sample}.zarr"), emit: artifacts
+    tuple val(sample), val(publish_dir), path("${sample}.zarr"), emit: artifacts
     path "${sample}.gene_overlap.tsv", emit: gene_overlap
     path "${sample}.annotate_celltypes.timing.tsv", emit: timings
-    // One `sample,path` line pointing at the published zarr.
-    path "${sample}.samplesheet_row.csv", emit: samplesheet_row
 
     script:
     """
     annotate_celltypes.py --sample ${sample} --path ${zarr} --reference ${reference} --outdir .
-
-    printf '%s' '${sample},${annotateCelltypesPublishDir(sample)}/${sample}.zarr' > ${sample}.samplesheet_row.csv
     """
 
     stub:
@@ -42,26 +29,36 @@ process ANNOTATE_CELLTYPES {
     mkdir -p ${sample}.zarr
     touch ${sample}.gene_overlap.tsv
     touch ${sample}.annotate_celltypes.timing.tsv
-
-    printf '%s' '${sample},${annotateCelltypesPublishDir(sample)}/${sample}.zarr' > ${sample}.samplesheet_row.csv
     """
 }
 
 workflow annotate_celltypes {
-    validateAndParseSampleSheet(['sample', 'path'])
-        .map { row -> tuple(row.sample, file(row.path)) }
-        .set { zarrs }               // tuple(sample, clustered zarr)
+    take:
+    // tuple(sample, input path). Both entry points hand over the same shape: main.nf from a
+    // samplesheet, the chained script from the previous step's artifacts.
+    zarrs
 
-    // The committed reference unless --reference names another. Resolved against
-    // projectDir, so a run launched from outside the repo still finds it.
+    main:
+    // The publish dir is built here and nowhere else. It goes into the process and comes back
+    // out with the artifact, so no caller ever reconstructs it.
+    zarrs.map { sample, input_path ->
+            tuple(sample, "${params.outdir}/${sample}/annotate_celltypes", input_path)
+        }
+        .set { inputs }
+
+    // The committed reference unless --reference names another. Resolved against projectDir,
+    // so a run launched from outside the repo still finds it.
     def reference = file(params.reference
         ?: "${projectDir}/assets/reference/shami_human_testis_centroids.csv.gz")
 
-    ANNOTATE_CELLTYPES(zarrs, reference, file("${projectDir}/bin/timer.py"))
+    ANNOTATE_CELLTYPES(inputs, reference, file("${projectDir}/bin/timer.py"))
 
-    // Handoff samplesheet of the per-sample annotated zarrs.
-    ANNOTATE_CELLTYPES.out.samplesheet_row
-        .map { it.text }             // read row content so collectFile's sort is deterministic
+    // Handoff samplesheet, built from the channel rather than a row file the task printf'd.
+    ANNOTATE_CELLTYPES.out.artifacts
+        .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }
         .collectFile(name: 'annotate_celltypes_samplesheet.csv', storeDir: params.outdir,
                      seed: 'sample,path', newLine: true, sort: true)
+
+    emit:
+    artifacts = ANNOTATE_CELLTYPES.out.artifacts
 }
