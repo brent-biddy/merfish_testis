@@ -34,9 +34,11 @@ from timer import timer, timing_summary
 # read which plane was loaded instead of assuming it.
 Z_LAYER = 3
 
-# Keyed by the names merscope()'s vpt_outputs dict takes. VPT prefixes its outputs with the
-# segmentation method, so the directory form of vpt_outputs finds the boundaries and misses
-# both CSVs; naming all three explicitly sidesteps the prefix.
+# Keyed by the names merscope()'s vpt_outputs dict takes. These are the Vizgen delivery's
+# names, which prep_cellpose_vpt.py writes too. VPT itself prefixes only the boundaries --
+# a stock run writes cell_by_gene.csv and cell_metadata.csv unprefixed, and would have to
+# be named here. The dict form is needed regardless: the reordering below hands merscope()
+# a rewritten metadata path, which the directory form has no way to take.
 VPT_FILES = {
     "cell_by_gene": "cellpose_cell_by_gene.csv",
     "cell_metadata": "cellpose_cell_metadata.csv",
@@ -60,9 +62,9 @@ def vpt_outputs(vpt_dir, staging_dir):
     missing = [str(path) for path in paths.values() if not path.exists()]
     if missing:
         raise FileNotFoundError(
-            f"Missing VPT output(s) in {vpt_dir}: {', '.join(missing)}. Expected the files "
-            f"a cellpose VPT run writes; a watershed run names its boundaries "
-            f"watershed_micron_space.parquet instead."
+            f"Missing VPT output(s) in {vpt_dir}: {', '.join(missing)}. Expected the names a "
+            f"Vizgen cellpose delivery uses; a stock VPT run writes the two CSVs unprefixed, "
+            f"and a watershed run names its boundaries watershed_micron_space.parquet."
         )
 
     # Only the ids are needed, and cellpose_cell_by_gene.csv is hundreds of MB of counts.
