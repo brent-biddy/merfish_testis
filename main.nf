@@ -37,7 +37,7 @@ include { create_spatialdata      } from './modules/create_spatialdata'
 include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
-include { QUARTO_RENDER           } from './modules/quarto_render'
+include { QUARTO_RENDER           } from './modules/render'
 include { samplePathPairs         } from './modules/samplesheet'
 
 workflow {
@@ -70,9 +70,13 @@ workflow {
         .collect()
         .set { report_inputs }
 
+    // Where it publishes rides in the tuple with it, the same as it does for a --step render:
+    // the directive is a closure over an input, so both entry points hand the process the
+    // destination rather than the process reaching for params.
     QUARTO_RENDER(
-        "celltype_report_${params.run_id}",
-        report_inputs,
+        report_inputs.map { paths ->
+            tuple("${projectDir}/reports", "celltype_report_${params.run_id}", paths)
+        },
         file("${projectDir}/notebooks/celltype_report.qmd"),
         file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
         file("${projectDir}/assets/fold-code.lua"),

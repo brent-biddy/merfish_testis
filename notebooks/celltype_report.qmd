@@ -3,10 +3,10 @@ title: "MERFISH testis — cell type annotation"
 subtitle: "One section per sample: clusters, per-cell calls, and what they compose to"
 author: "Brent Biddy"
 date: today
-# Pinned by name. Apptainer bind-mounts $HOME, so kernelspecs from
-# ~/.local/share/jupyter/kernels shadow the container's own and "python3" resolves to a
-# host env without the pipeline's packages.
-jupyter: python_spatial
+# No kernel pinned. The images set JUPYTER_PATH to their own share directory, so `python3`
+# resolves to the image's environment rather than to a host kernelspec that Apptainer's $HOME
+# bind-mount makes visible. Pinning by name was the workaround for that leak, and it broke the
+# moment a step moved to a different image: the name did not exist there.
 format:
   gfm:
     # The one figure setting that has to differ per format, so it lives here rather than
