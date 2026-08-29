@@ -13,18 +13,56 @@ apptainer exec docker://babiddy755/python_spatial:1.2.0 bin/create_spatialdata.p
 
 ## Running the pipeline
 
-Steps are selected by name; there is no chaining inside Nextflow, so any step can be
-rerun on its own.
+Two entry scripts, and they interoperate.
 
 ```bash
-nextflow run main.nf -profile local --step create_spatialdata --samplesheet assets/samplesheet.csv
+# One step at a time, while the analysis is being worked out.
+nextflow run steps.nf -profile wsl --step create_spatialdata --samplesheet assets/samplesheet.csv
+
+# The Vizgen path chained end to end, as one run.
+nextflow run main.nf -profile wsl --samplesheet assets/samplesheet.csv
 ```
 
-`-profile` is required. There is no `standard` profile — the one Nextflow would fall back
-to when it is omitted — so a run without it gets no container and no executor settings.
-Use `local` on a workstation and `oscer` on the cluster.
+Steps are selected by name; `steps.nf` chains nothing, so any step can be rerun on its own.
+`main.nf` calls the same module workflows in order — an example of the shape rather than a
+settled analysis. Because every step writes the next one's samplesheet into `results/<run_id>/`,
+a chained run leaves the same breadcrumbs a stepwise one does: run the whole thing, then re-run
+a single step from what it wrote.
+
+`nextflow run .` resolves to `main.nf`, so the default answer to "run this repo" is an
+analysis rather than a usage error.
+
+### Profiles
+
+The defaults apply unconditionally, from `conf/defaults.config`, and a profile states only
+its difference. There is deliberately no `standard` profile: Nextflow only auto-applies that
+when `-profile` is omitted entirely, so naming one would mean `-profile wsl` silently dropped
+the defaults with it.
+
+| Invocation | What you get |
+|---|---|
+| *(none)* | local executor, the container, no GPU access |
+| `-profile wsl` | the above, plus how a `label 'gpu'` process reaches a card under WSL2 |
+| `-profile oscer` | SLURM, scratch and OURdisk paths, the GPU queue |
+
+The cost is worth knowing: forgetting `-profile oscer` on the cluster no longer fails — it
+runs everything on the login node.
 
 Add `-stub` to check wiring without doing the work.
+
+### How artifacts are named
+
+Every artifact is `<sample>.<step>.<ext>` — `u2os_test.cluster_spatialdata_gpu.zarr`, not
+`u2os_test.zarr`. Nothing then collides when files are staged flat: not two samples, and not
+one step's input with its own output.
+
+That is what lets a report notebook ask for a specific step —
+`glob("*.annotate_celltypes.zarr")` — instead of `*.zarr` and hoping, and it is why the render
+step can stage everything into one directory rather than numbered `input*/` subdirectories.
+
+A `--group_by` run qualifies the stem rather than extending it —
+`<sample>.<column>.centroids.h5ad` — so `.centroids` stays the last token before the extension
+and one glob takes both.
 
 Output publishes beside the code, so a result sits next to the analysis that produced it.
 Each invocation gets its own directory under `results/`, named by a timestamp `run_id`:
@@ -35,7 +73,7 @@ Each invocation gets its own directory under `results/`, named by a timestamp `r
 ```
 
 The work dir and the image cache stay out of the repo, being large, churny, and
-reproducible: under `~/merfish_testis_work/` on `local`, and
+reproducible: under `~/merfish_testis_work/` by default, and
 `/scratch/$USER/merfish_testis_work/` on `oscer`. Scratch deletes files 14 days after they
 are created no matter how recently they were read, so nothing durable can live there — on
 `oscer` the image cache sits on OURdisk for that reason.
@@ -55,11 +93,11 @@ filename prefixes.
 
 | Step | Script | Samplesheet | Input | Output |
 |------|--------|-------------|-------|--------|
-| 1 | `bin/create_spatialdata.py` | `sample, path` | MERSCOPE region directory | `<sample>.zarr` |
+| 1 | `bin/create_spatialdata.py` | `sample, path` | MERSCOPE region directory | `<sample>.<step>.zarr` |
 | 1a | `bin/prep_cellpose_vpt.py` | `sample, path, cellpose_path` | MERSCOPE region directory and a merged bespoke cellpose segmentation | `cellpose_*.{csv,parquet}` |
-| 1b | `bin/create_spatialdata_cellpose.py` | `sample, path, vpt_path` | MERSCOPE region directory and VPT cellpose output, from a VPT run or from step 1a | `<sample>.zarr` |
-| 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.zarr` |
-| 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.zarr` |
+| 1b | `bin/create_spatialdata_cellpose.py` | `sample, path, vpt_path` | MERSCOPE region directory and VPT cellpose output, from a VPT run or from step 1a | `<sample>.<step>.zarr` |
+| 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.<step>.zarr` |
+| 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.<step>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
 | 5 | `--notebook`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the notebook globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<notebook>_<run_id>/<notebook>.{pptx,md}` |
 
@@ -146,10 +184,10 @@ header, since the counts array is bare integers — that the blank codewords car
 lower counts than real genes is what confirms the order applies.
 
 ```bash
-nextflow run main.nf -profile oscer --step prep_cellpose_vpt \
+nextflow run steps.nf -profile oscer --step prep_cellpose_vpt \
     --samplesheet assets/samplesheet_cellpose_prep.csv
 
-nextflow run main.nf -profile oscer --step create_spatialdata_cellpose \
+nextflow run steps.nf -profile oscer --step create_spatialdata_cellpose \
     --samplesheet <run>/results/prep_cellpose_vpt_samplesheet.csv
 ```
 
@@ -158,7 +196,7 @@ forwarding the region unchanged and naming this step's output as the VPT directo
 
 The label raster is about 7 GB per plane and the step holds one plane, the counts and the
 traced polygons at once, so `nextflow.config` gives the process 64 GB on `oscer` rather
-than letting the retry ladder find it. It is too large for the `local` profile's default.
+than letting the retry ladder find it. It is too large for the default memory request.
 
 ### 1b. create_spatialdata_cellpose
 
@@ -195,7 +233,7 @@ different sample ids if you want to keep both — they are otherwise indistingui
 report, and element names are built from the sample id.
 
 ```bash
-nextflow run main.nf -profile local --step create_spatialdata_cellpose \
+nextflow run steps.nf -profile wsl --step create_spatialdata_cellpose \
     --samplesheet assets/samplesheet_cellpose.csv
 ```
 
@@ -215,10 +253,11 @@ There is no highly-variable-gene selection — a MERFISH panel is a few hundred 
 markers, so every gene is used. Genes are not filtered either.
 
 This step needs a CUDA GPU. Driver passthrough differs by profile — `oscer` uses `--nv`,
-`local` binds the WSL2 driver directory — and is set in `nextflow.config`, not the module.
+`wsl` binds the WSL2 driver directory — and is set in the site config, not the module. The
+process declares `label 'gpu'`; each site answers it.
 
 ```bash
-nextflow run main.nf -profile local --step cluster_spatialdata_gpu \
+nextflow run steps.nf -profile wsl --step cluster_spatialdata_gpu \
     --samplesheet <run>/results/create_spatialdata_samplesheet.csv
 ```
 
@@ -243,7 +282,7 @@ a type would land, not that it was found.
 `--reference` selects the table; it defaults to the one in `assets/reference`.
 
 ```bash
-nextflow run main.nf -profile local --step annotate_celltypes \
+nextflow run steps.nf -profile wsl --step annotate_celltypes \
     --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
@@ -263,17 +302,17 @@ would make a change to the centroid recipe re-run the GPU Leiden sweep.
 
 `--group_by <column>` sums over one named obs column instead of the sweep — cell type,
 once a later step has written it. Those runs are named for the column
-(`<sample>.centroids_<column>.h5ad`, and its own handoff sheet), so they publish beside a
+(`<sample>.<column>.centroids.h5ad`, and its own handoff sheet), so they publish beside a
 sweep run rather than displacing it and the step can be re-run for each grouping you want.
 
 A grouping that is a union of v1 clusters needs no run at all — sums are additive, so add
 the rows.
 
 ```bash
-nextflow run main.nf -profile local --step create_centroids \
+nextflow run steps.nf -profile wsl --step create_centroids \
     --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
 
-nextflow run main.nf -profile local --step create_centroids --group_by cell_type \
+nextflow run steps.nf -profile wsl --step create_centroids --group_by cell_type \
     --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
@@ -288,7 +327,7 @@ what it does with them, is the notebook's own business. **A new report is theref
 notebook and no Nextflow at all** — copy an existing `.qmd`, edit it, and render it.
 
 Staging is the input contract: the workflow drops each samplesheet path into its own
-`input*/` directory beside the notebook and the notebook globs what it needs, taking each
+flat beside the notebook and the notebook globs the step it wants, taking each
 sample's id from inside its object rather than from the staged filename. One directory per
 file because two samples publish their stores under the same name, and a step that names
 no columns cannot pattern its way around the collision. Adding a sample needs no edit to
@@ -327,12 +366,12 @@ together; the run id ties the render to the results tree it was built from. `--r
 replaces the whole name when the render deserves one of its own:
 
 ```bash
-nextflow run main.nf -profile local --step quarto_render --run_id cellpose_cmp \
+nextflow run steps.nf -profile wsl --step quarto_render --run_id cellpose_cmp \
     --notebook notebooks/celltype_report.qmd \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
 # -> reports/celltype_report_cellpose_cmp/celltype_report.md
 
-nextflow run main.nf -profile local --step quarto_render --run_id cellpose_cmp \
+nextflow run steps.nf -profile wsl --step quarto_render --run_id cellpose_cmp \
     --notebook notebooks/celltype_report_cellpose.qmd \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
 # -> reports/celltype_report_cellpose_cmp1/celltype_report_cellpose.md
@@ -368,8 +407,10 @@ check the slide count and titles.
 ## Layout
 
 ```
-main.nf          step dispatch
-nextflow.config  profiles: local (workstation), oscer (slurm)
+main.nf          a chained analysis; `nextflow run .` resolves here
+steps.nf         step dispatch, for working one step at a time
+nextflow.config  params, and which site profiles exist
+conf/            defaults.config applies always; wsl and oscer state their difference
 bin/             all executable code
 modules/         one file per step: its process and its workflow
 notebooks/       report notebooks
