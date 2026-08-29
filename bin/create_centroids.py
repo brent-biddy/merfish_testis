@@ -17,7 +17,7 @@ Groups by every _v1 column by default, or by one named obs column with --group_b
 Requires layers["counts"], which cluster_spatialdata_gpu.py writes.
 
 Writes <outdir>/<sample>.centroids.h5ad plus a timing TSV, or
-<outdir>/<sample>.centroids_<column>.* for a --group_by run, so the two can sit side
+<outdir>/<sample>.<column>.centroids.* for a --group_by run, so the two can sit side
 by side.
 
 Usage:
@@ -106,8 +106,10 @@ def main():
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # A --group_by run publishes beside a sweep run, so the column goes in the name.
-    stem = f"{args.sample}.centroids_{args.group_by}" if args.group_by else f"{args.sample}.centroids"
+    # A --group_by run publishes beside a sweep run, so the column goes in the name. It
+    # qualifies the stem rather than extending it, so `.centroids` stays the last token
+    # before the extension and one glob takes both.
+    stem = f"{args.sample}.{args.group_by}.centroids" if args.group_by else f"{args.sample}.centroids"
     output_path = outdir / f"{stem}.h5ad"
 
     print(f"Sample:  {args.sample}")

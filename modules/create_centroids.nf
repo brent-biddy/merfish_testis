@@ -1,10 +1,10 @@
-include { validateAndParseSampleSheet } from './samplesheet'
 
-// Basename of both artifacts this step writes. A --group_by run publishes beside a sweep
-// run rather than displacing it, so the column goes in the name. Single-sourced because
-// the output block and the stub must agree, and a --group_by run changes both at once.
+// Basename of both artifacts this step writes. A --group_by run publishes beside a sweep run
+// rather than displacing it, so the column goes in the name -- qualifying the stem rather
+// than extending it, so `.centroids` stays the last token before the extension and one glob
+// takes both. Single-sourced because the output block and the stub must agree.
 def centroidStem(sample) {
-    params.group_by ? "${sample}.centroids_${params.group_by}" : "${sample}.centroids"
+    params.group_by ? "${sample}.${params.group_by}.centroids" : "${sample}.centroids"
 }
 
 // Build per-cluster centroids from one sample's clustered zarr.

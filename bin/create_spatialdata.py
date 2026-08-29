@@ -13,7 +13,11 @@ neither is an error rather than a store with no polygons in it.
 
 Later steps read the Zarr store rather than the MERSCOPE directory.
 
-Writes <outdir>/<sample>.zarr plus a timing TSV.
+Writes <outdir>/<sample>.create_spatialdata.zarr plus a timing TSV.
+
+The step name is in the filename so every artifact in the project is uniquely named
+by sample and step. Nothing collides when files are staged flat, which is what lets a
+report notebook glob one step's output without the workflow naming its inputs.
 
 Usage:
     create_spatialdata.py --sample testis_01 \\
@@ -151,7 +155,7 @@ def parse_args():
     parser.add_argument(
         "--outdir",
         default=".",
-        help="Directory to write <sample>.zarr into (default: current directory)",
+        help="Directory to write <sample>.create_spatialdata.zarr into (default: current directory)",
     )
     return parser.parse_args()
 
@@ -161,7 +165,7 @@ def main():
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    output_path = outdir / f"{args.sample}.zarr"
+    output_path = outdir / f"{args.sample}.create_spatialdata.zarr"
 
     print(f"Sample:  {args.sample}")
     print(f"Input:   {args.path}")

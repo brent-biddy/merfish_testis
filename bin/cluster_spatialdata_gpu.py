@@ -12,7 +12,11 @@ markers, so every gene is used.
 Each swept resolution leaves two obs columns, leiden_res_<r>_v0 and leiden_res_<r>_v1.
 v1 is the size ranking and is what downstream steps mean by a cluster id.
 
-Writes <outdir>/<sample>.zarr plus a timing TSV.
+Writes <outdir>/<sample>.cluster_spatialdata_gpu.zarr plus a timing TSV.
+
+The step name is in the filename so every artifact in the project is uniquely named
+by sample and step. Nothing collides when files are staged flat, which is what lets a
+report notebook glob one step's output without the workflow naming its inputs.
 
 Usage:
     cluster_spatialdata_gpu.py --sample testis_01 \\
@@ -66,7 +70,7 @@ def parse_args():
     parser.add_argument(
         "--outdir",
         default=".",
-        help="Directory to write <sample>.zarr into (default: current directory)",
+        help="Directory to write <sample>.cluster_spatialdata_gpu.zarr into (default: current directory)",
     )
     parser.add_argument(
         "--min_counts",
@@ -89,7 +93,7 @@ def main():
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    output_path = outdir / f"{args.sample}.zarr"
+    output_path = outdir / f"{args.sample}.cluster_spatialdata_gpu.zarr"
 
     print(f"Sample:  {args.sample}")
     print(f"Input:   {args.path}")

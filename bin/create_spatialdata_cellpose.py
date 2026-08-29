@@ -13,7 +13,11 @@ recoverable from its contents, so the VPT directory is recorded into the table.
 The store is the same shape as the one create_spatialdata.py writes, so the clustering,
 annotation and report steps read it unchanged.
 
-Writes <outdir>/<sample>.zarr plus a timing TSV.
+Writes <outdir>/<sample>.create_spatialdata_cellpose.zarr plus a timing TSV.
+
+The step name is in the filename so every artifact in the project is uniquely named
+by sample and step. Nothing collides when files are staged flat, which is what lets a
+report notebook glob one step's output without the workflow naming its inputs.
 
 Usage:
     create_spatialdata_cellpose.py --sample b2r0_cellpose \\
@@ -101,7 +105,7 @@ def parse_args():
     parser.add_argument(
         "--outdir",
         default=".",
-        help="Directory to write <sample>.zarr into (default: current directory)",
+        help="Directory to write <sample>.create_spatialdata_cellpose.zarr into (default: current directory)",
     )
     return parser.parse_args()
 
@@ -111,7 +115,7 @@ def main():
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    output_path = outdir / f"{args.sample}.zarr"
+    output_path = outdir / f"{args.sample}.create_spatialdata_cellpose.zarr"
 
     print(f"Sample:  {args.sample}")
     print(f"Input:   {args.path}")

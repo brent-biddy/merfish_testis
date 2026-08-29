@@ -11,7 +11,11 @@ Spearman-correlates each cell's profile with each cell type in a reference centr
 This is the metric a report reads. It makes no cluster-level call: a cluster's identity is
 read off the composition of these per-cell calls, which is a judgment made by a person.
 
-Writes <outdir>/<sample>.zarr, a gene overlap TSV, and a timing TSV.
+Writes <outdir>/<sample>.annotate_celltypes.zarr, a gene overlap TSV, and a timing TSV.
+
+The step name is in the filename so every artifact in the project is uniquely named
+by sample and step. Nothing collides when files are staged flat, which is what lets a
+report notebook glob one step's output without the workflow naming its inputs.
 
 Usage:
     annotate_celltypes.py --sample testis_01 \\
@@ -48,7 +52,7 @@ def parse_args():
     parser.add_argument(
         "--outdir",
         default=".",
-        help="Directory to write <sample>.zarr into (default: current directory)",
+        help="Directory to write <sample>.annotate_celltypes.zarr into (default: current directory)",
     )
     return parser.parse_args()
 
@@ -58,7 +62,7 @@ def main():
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    output_path = outdir / f"{args.sample}.zarr"
+    output_path = outdir / f"{args.sample}.annotate_celltypes.zarr"
 
     print(f"Sample:    {args.sample}")
     print(f"Input:     {args.path}")

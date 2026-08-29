@@ -21,7 +21,7 @@ process CREATE_SPATIALDATA_CELLPOSE {
     path 'timer.py'
 
     output:
-    tuple val(sample), path("${sample}.zarr"), emit: artifacts
+    tuple val(sample), path("${sample}.create_spatialdata_cellpose.zarr"), emit: artifacts
     path "${sample}.create_spatialdata_cellpose.timing.tsv", emit: timings
     // One `sample,path` line pointing at the published zarr.
     // main.nf collects these into a handoff samplesheet.
@@ -37,7 +37,7 @@ process CREATE_SPATIALDATA_CELLPOSE {
 
     stub:
     """
-    mkdir -p ${sample}.zarr
+    mkdir -p ${sample}.create_spatialdata_cellpose.zarr
     touch ${sample}.create_spatialdata_cellpose.timing.tsv
 
     printf '%s' '${sample},${createSpatialdataCellposePublishDir(sample)}/${sample}.zarr' > ${sample}.samplesheet_row.csv

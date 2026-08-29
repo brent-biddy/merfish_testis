@@ -13,13 +13,11 @@ process CLUSTER_SPATIALDATA_GPU {
     publishDir { publish_dir }, mode: 'copy'
 
     input:
-    // stageAs: the input store is named <sample>.zarr too, and would collide with the
-    // output of the same name in the task work dir.
-    tuple val(sample), val(publish_dir), path(zarr, stageAs: 'input.zarr')
+    tuple val(sample), val(publish_dir), path(zarr)
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir), path("${sample}.zarr"), emit: artifacts
+    tuple val(sample), val(publish_dir), path("${sample}.cluster_spatialdata_gpu.zarr"), emit: artifacts
     path "${sample}.cluster_spatialdata_gpu.timing.tsv", emit: timings
 
     script:
@@ -29,7 +27,7 @@ process CLUSTER_SPATIALDATA_GPU {
 
     stub:
     """
-    mkdir -p ${sample}.zarr
+    mkdir -p ${sample}.cluster_spatialdata_gpu.zarr
     touch ${sample}.cluster_spatialdata_gpu.timing.tsv
     """
 }

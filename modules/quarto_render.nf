@@ -27,10 +27,10 @@ process QUARTO_RENDER {
     // Passed in rather than read from params inside the process: a helper called from a
     // directive is resolved as a directive, so it has to be an in-scope variable here.
     val stem
-    // One directory per input rather than a flat fan-in. Every sample publishes its store
-    // under the same name, so a flat staging collides the moment there are two rows -- and
-    // unlike a typed step, this one cannot name a pattern to disambiguate them.
-    path inputs, stageAs: 'input*/*'
+    // Staged flat. Every artifact is named <sample>.<step>.<ext>, so nothing collides --
+    // not two samples, and not two steps -- and a notebook picks its inputs apart by globbing
+    // the suffix it wants rather than the workflow naming them into subdirectories.
+    path inputs
     path notebook
     // Quarto resolves reference-doc and filters relative to the qmd's own directory, so
     // both have to land beside the staged notebook rather than at their repo paths.

@@ -95,23 +95,27 @@ plt.rcParams.update({
     "legend.fontsize": 7,
 })
 
-# Staging is the input contract: the workflow drops every samplesheet path into its own
-# input directory beside the notebook, one per file, since two samples publish their
-# stores under the same name. Globbing them is how this notebook declares what it needs --
-# the render step names no columns and knows nothing about zarrs.
-ZARRS = sorted(Path(".").glob("input*/*.zarr"))
+# Staging is the input contract: the workflow drops every samplesheet path flat beside the
+# notebook, and globbing them is how this notebook declares what it needs -- the render step
+# names no columns and knows nothing about zarrs.
+#
+# The glob names a step, not an extension. Every artifact is <sample>.<step>.<ext>, so
+# *.annotate_celltypes.zarr asks for the annotated stores specifically rather than whichever
+# zarrs happen to be staged -- which is what makes flat staging safe when a report wants two
+# steps' outputs at once.
+ZARRS = sorted(Path(".").glob("*.annotate_celltypes.zarr"))
 if not ZARRS:
-    raise FileNotFoundError("No .zarr directories staged next to the notebook.")
+    raise FileNotFoundError("No *.annotate_celltypes.zarr staged next to the notebook.")
 
 # The centroid stores, keyed on the sample each carries, so a zarr finds its own rather
 # than trusting the two staged lists to be in the same order. A --group_by run names them
-# <sample>.centroids_<column>.h5ad, which the same pattern takes.
+# <sample>.<column>.centroids.h5ad, which the same glob takes.
 CENTROIDS = {}
-for path in sorted(Path(".").glob("input*/*.centroids*.h5ad")):
+for path in sorted(Path(".").glob("*.centroids.h5ad")):
     store = ad.read_h5ad(path)
     CENTROIDS[str(store.obs["sample"].iloc[0])] = store
 if not CENTROIDS:
-    raise FileNotFoundError("No centroids*.h5ad staged next to the notebook.")
+    raise FileNotFoundError("No *.centroids.h5ad staged next to the notebook.")
 ```
 
 ## Drawing primitives

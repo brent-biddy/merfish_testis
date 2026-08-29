@@ -8,14 +8,12 @@ process ANNOTATE_CELLTYPES {
     publishDir { publish_dir }, mode: 'copy'
 
     input:
-    // stageAs: the input store is named <sample>.zarr too, and would collide with the
-    // output of the same name in the task work dir.
-    tuple val(sample), val(publish_dir), path(zarr, stageAs: 'input.zarr')
+    tuple val(sample), val(publish_dir), path(zarr)
     path reference
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir), path("${sample}.zarr"), emit: artifacts
+    tuple val(sample), val(publish_dir), path("${sample}.annotate_celltypes.zarr"), emit: artifacts
     path "${sample}.gene_overlap.tsv", emit: gene_overlap
     path "${sample}.annotate_celltypes.timing.tsv", emit: timings
 
@@ -26,7 +24,7 @@ process ANNOTATE_CELLTYPES {
 
     stub:
     """
-    mkdir -p ${sample}.zarr
+    mkdir -p ${sample}.annotate_celltypes.zarr
     touch ${sample}.gene_overlap.tsv
     touch ${sample}.annotate_celltypes.timing.tsv
     """

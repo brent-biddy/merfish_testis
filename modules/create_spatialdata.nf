@@ -13,7 +13,7 @@ process CREATE_SPATIALDATA {
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir), path("${sample}.zarr"), emit: artifacts
+    tuple val(sample), val(publish_dir), path("${sample}.create_spatialdata.zarr"), emit: artifacts
     path "${sample}.create_spatialdata.timing.tsv", emit: timings
 
     script:
@@ -23,7 +23,7 @@ process CREATE_SPATIALDATA {
 
     stub:
     """
-    mkdir -p ${sample}.zarr
+    mkdir -p ${sample}.create_spatialdata.zarr
     touch ${sample}.create_spatialdata.timing.tsv
     """
 }
