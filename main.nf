@@ -1,53 +1,80 @@
 #!/usr/bin/env nextflow
 
-// Single entry point for all pipeline steps.
-// Select a step with: nextflow run main.nf --step <name> --samplesheet <path>
+// The Vizgen-segmentation path, chained end to end:
 //
-// Steps:
-//   create_spatialdata       samplesheet: sample, path   (path = MERSCOPE region directory)
-//   prep_cellpose_vpt        samplesheet: sample, path, cellpose_path
-//                                             (path = MERSCOPE region directory,
-//                                              cellpose_path = merged bespoke cellpose dir)
-//   create_spatialdata_cellpose  samplesheet: sample, path, vpt_path
-//                                             (path = MERSCOPE region directory,
-//                                              vpt_path = its VPT cellpose output directory)
-//   cluster_spatialdata_gpu  samplesheet: sample, path   (path = zarr from either create step)
-//   annotate_celltypes       samplesheet: sample, path   (path = zarr from cluster_spatialdata_gpu)
-//   create_centroids         samplesheet: sample, path   (path = zarr from either of the two above)
-//   quarto_render            samplesheet: sample, and any path columns the notebook globs
-//                            --notebook names the report to render
+//   nextflow run main.nf -profile wsl --samplesheet assets/samplesheet.csv
 //
-// Each step is independent: there is no chaining inside Nextflow. A step that consumes
-// another's output takes a samplesheet pointing at the prior step's published paths, so
-// any step can be rerun on its own without re-running what came before.
+// **This is an example of the shape, not a settled analysis.** The analysis this repo will
+// eventually publish is not decided, so nothing here is pinned in the sense a paper needs.
+// What it demonstrates is that the steps compose: the same module workflows steps.nf
+// dispatches one at a time run as one invocation, with no code duplicated between them.
+//
+// It is main.nf because the analysis belongs at the front door: `nextflow run .` and
+// `nextflow run <repo>` both resolve to this file, so what someone gets by default is a path
+// that produces results, not the tooling that produces the path. Working a step at a time is
+// steps.nf.
+//
+// The two are peers, not layers. You work a step at a time while the analysis is being figured
+// out, because a step you can rerun on its own is what makes iterating cheap. Once a path is
+// settled, it gets written down like this one so it can be replayed as one run — and there can
+// be more than one, a file per analysis, named for what it produces.
+//
+// It has to sit here at the repo root: projectDir is the directory of the launched script, and
+// that is what puts bin/ on PATH and resolves ${projectDir}/assets. One in a subdirectory
+// breaks both. (Nextflow's -entry would have been the other way to do this; the strict syntax
+// in 26.x no longer supports it.)
+//
+// It calls the module workflows, not the processes. Each one owns its publish dir and hands it
+// back out with the artifact, so nothing here reconstructs a path a step already knows — and
+// every step still writes its handoff samplesheet, so a run of this can be resumed from any
+// single step afterwards with steps.nf.
+//
+// This is the Vizgen-segmentation path. The cellpose re-segmentation route
+// (prep_cellpose_vpt -> create_spatialdata_cellpose) is a different analysis and would be its
+// own entry script, not a flag here.
 
 include { create_spatialdata      } from './modules/create_spatialdata'
-include { prep_cellpose_vpt       } from './modules/prep_cellpose_vpt'
-include { create_spatialdata_cellpose } from './modules/create_spatialdata_cellpose'
 include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
-include { quarto_render           } from './modules/quarto_render'
-include { samplePathPairs; samplePathWithSource;
-          sampleRegionCellpose; sampleRegionVpt } from './modules/samplesheet'
+include { QUARTO_RENDER           } from './modules/quarto_render'
+include { samplePathPairs         } from './modules/samplesheet'
 
 workflow {
-    def valid_steps = ['create_spatialdata', 'prep_cellpose_vpt',
-                       'create_spatialdata_cellpose',
-                       'cluster_spatialdata_gpu', 'annotate_celltypes',
-                       'create_centroids', 'quarto_render']
+    create_spatialdata(samplePathPairs())
 
-    if (!params.samplesheet)           error "Please provide --samplesheet"
-    if (!(params.step in valid_steps)) error "Please provide a valid --step. Valid steps: ${valid_steps.join(', ')}"
-    // The render step has no notebook of its own -- that is the point of it.
-    if (params.step == 'quarto_render' && !params.notebook)
-        error "Please provide --notebook: the .qmd to render, e.g. notebooks/celltype_report.qmd"
+    cluster_spatialdata_gpu(
+        create_spatialdata.out.artifacts.map { sample, publish_dir, zarr -> tuple(sample, zarr) }
+    )
 
-    if      (params.step == 'create_spatialdata')      create_spatialdata(samplePathPairs())
-    else if (params.step == 'prep_cellpose_vpt')       prep_cellpose_vpt(sampleRegionCellpose())
-    else if (params.step == 'create_spatialdata_cellpose') create_spatialdata_cellpose(sampleRegionVpt())
-    else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(samplePathPairs())
-    else if (params.step == 'annotate_celltypes')      annotate_celltypes(samplePathPairs())
-    else if (params.step == 'create_centroids')        create_centroids(samplePathWithSource())
-    else if (params.step == 'quarto_render')           quarto_render()
+    annotate_celltypes(
+        cluster_spatialdata_gpu.out.artifacts.map { sample, publish_dir, zarr -> tuple(sample, zarr) }
+    )
+
+    // create_centroids also takes where its input was published, because the handoff row it
+    // writes has to forward a location that resolves outside the task. That comes from the
+    // upstream step's own publish_dir rather than being rebuilt from params.outdir here.
+    create_centroids(
+        annotate_celltypes.out.artifacts.map { sample, publish_dir, zarr ->
+            tuple(sample, zarr, "${publish_dir}/${zarr.name}")
+        }
+    )
+
+    // The report is a terminal fan-in over two steps' artifacts, so it calls the process
+    // directly: there is no handoff for a module workflow to manage, and nothing consumes it.
+    // Staged flat — every artifact is <sample>.<step>.<ext>, so the notebook globs the step it
+    // wants rather than the workflow naming its inputs.
+    create_centroids.out.artifacts
+        .map { sample, publish_dir, centroids, input_dir -> centroids }
+        .mix(annotate_celltypes.out.artifacts.map { sample, publish_dir, zarr -> zarr })
+        .collect()
+        .set { report_inputs }
+
+    QUARTO_RENDER(
+        "celltype_report_${params.run_id}",
+        report_inputs,
+        file("${projectDir}/notebooks/celltype_report.qmd"),
+        file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
+        file("${projectDir}/assets/fold-code.lua"),
+    )
 }
