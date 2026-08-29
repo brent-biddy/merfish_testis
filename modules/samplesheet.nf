@@ -25,3 +25,16 @@ def samplePathWithSource() {
     validateAndParseSampleSheet(['sample', 'path'])
         .map { row -> tuple(row.sample, file(row.path), row.path) }
 }
+
+// prep_cellpose_vpt's shape: the region as a value as well as a file, because its handoff
+// row forwards where the region lives, plus the bespoke cellpose directory.
+def sampleRegionCellpose() {
+    validateAndParseSampleSheet(['sample', 'path', 'cellpose_path'])
+        .map { row -> tuple(row.sample, row.path, file(row.cellpose_path)) }
+}
+
+// create_spatialdata_cellpose's shape: the region and the VPT directory prep produced.
+def sampleRegionVpt() {
+    validateAndParseSampleSheet(['sample', 'path', 'vpt_path'])
+        .map { row -> tuple(row.sample, file(row.path), file(row.vpt_path)) }
+}
