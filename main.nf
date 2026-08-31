@@ -37,7 +37,7 @@ include { create_spatialdata      } from './modules/create_spatialdata'
 include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
-include { QUARTO_RENDER           } from './modules/render'
+include { QUARTO_RENDER; renderSpecs } from './modules/render'
 include { samplePathPairs         } from './modules/samplesheet'
 
 workflow {
@@ -60,24 +60,37 @@ workflow {
         }
     )
 
-    // The report is a terminal fan-in over two steps' artifacts, so it calls the process
-    // directly: there is no handoff for a module workflow to manage, and nothing consumes it.
+    // The report reads two steps' artifacts, joined into one row per sample. Joined on the
+    // sample rather than mixed and collected, because renderSpecs sorts rows by sample to keep
+    // a chained run's section order stable — and a flat list of paths has no sample to sort on.
     // Staged flat — every artifact is <sample>.<step>.<ext>, so the notebook globs the step it
     // wants rather than the workflow naming its inputs.
+    // remainder: true because a plain join drops a sample present on only one side without
+    // saying so, and a report quietly missing a sample is worse than a run that stops. A
+    // clean run cannot hit this -- create_centroids consumes annotate_celltypes, so the two
+    // carry the same ids -- but a sample that fails mid-run leaves one side short, and that
+    // is exactly when the report should not be written.
     create_centroids.out.artifacts
-        .map { sample, publish_dir, centroids, input_dir -> centroids }
-        .mix(annotate_celltypes.out.artifacts.map { sample, publish_dir, zarr -> zarr })
-        .collect()
-        .set { report_inputs }
+        .map { sample, publish_dir, centroids, input_dir -> tuple(sample, centroids) }
+        .join(annotate_celltypes.out.artifacts.map { sample, publish_dir, zarr -> tuple(sample, zarr) },
+              remainder: true)
+        .map { sample, centroids, zarr ->
+            if (!centroids) error "Sample '${sample}' has no centroids: create_centroids did not produce one."
+            if (!zarr)      error "Sample '${sample}' has no annotated zarr: annotate_celltypes did not produce one."
+            [sample: sample, centroids: centroids, zarr: zarr]
+        }
+        .set { report_rows }
 
-    // Where it publishes rides in the tuple with it, the same as it does for a --step render:
-    // the directive is a closure over an input, so both entry points hand the process the
-    // destination rather than the process reaching for params.
+    // Rendering calls the process rather than the module workflow, because that workflow reads
+    // the mode off params.step and a pinned path has no --step. renderSpecs is the module's own
+    // spec builder, so the report publish path is still defined once, in reportDir — and
+    // --report_id and --to mean the same thing here as in a stepwise render.
+    //
+    // One cohort render today. Adding per-sample pages beside it is a second renderSpecs call
+    // mixed into this channel, because the notebook and the format ride in the tuple.
     QUARTO_RENDER(
-        report_inputs.map { paths ->
-            tuple("${projectDir}/reports", "celltype_report_${params.run_id}", paths)
-        },
-        file("${projectDir}/notebooks/celltype_report.qmd"),
+        renderSpecs(report_rows, file("${projectDir}/notebooks/celltype_report.qmd"),
+                    params.to, false),
         file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
         file("${projectDir}/assets/fold-code.lua"),
     )

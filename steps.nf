@@ -41,7 +41,7 @@ include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
 include { render                  } from './modules/render'
-include { samplePathPairs; samplePathWithSource;
+include { validateAndParseSampleSheet; samplePathPairs; samplePathWithSource;
           sampleRegionCellpose; sampleRegionVpt } from './modules/samplesheet'
 
 workflow {
@@ -62,6 +62,7 @@ workflow {
     else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(samplePathPairs())
     else if (params.step == 'annotate_celltypes')      annotate_celltypes(samplePathPairs())
     else if (params.step == 'create_centroids')        create_centroids(samplePathWithSource())
-    // Both render steps are one workflow; it reads the mode off params.step.
-    else                                               render()
+    // Both render steps are one workflow; it reads the mode off params.step. Rows rather than
+    // pairs: which columns a notebook wants to stage is the notebook's business.
+    else                                               render(validateAndParseSampleSheet(['sample']))
 }

@@ -1,27 +1,26 @@
-include { validateAndParseSampleSheet } from './samplesheet'
-
-// Directory this render publishes into under reports/. Defaults to the notebook and the
-// run that produced it: the notebook leads so a listing groups a report type together, and
-// the run id ties the render to the results tree it was built from. --report_id replaces
-// the whole name. Single-sourced because the output block and the stub must agree.
+// Directory a render publishes into under reports/. The notebook leads so a listing groups a
+// report type together; the run id names the render invocation, not the results tree it read
+// -- those are different runs, since a render takes a samplesheet pointing at some earlier
+// run's published paths. --report_id replaces both when a render deserves a name of its own,
+// and gives up the uniqueness the run id provided; the format is still appended.
 //
 // The format is part of the name because the two packagings of one notebook are different
 // artifacts -- a deck read straight through in a meeting, a directory of pages browsed on
-// GitHub -- and they are produced by separate runs. Sharing a name put the fan-out's
-// per-sample pages inside the fan-in's own output directory, where they only stayed intact
-// because publishDir merges rather than prunes.
-def reportDir() {
-    def base = params.report_id ?: "${file(params.notebook).baseName}_${params.run_id}"
-    params.to ? "${base}_${params.to}" : base
+// GitHub -- produced by separate runs. Sharing a name put the fan-out's per-sample pages
+// inside the fan-in's own output directory, where they only stayed intact because publishDir
+// merges rather than prunes.
+//
+// Notebook and format are arguments rather than read off params, because a chained run can
+// render more than one notebook in a single invocation and there is then no single
+// params.notebook or params.to to read.
+def reportDir(notebook, format) {
+    def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
+    format ? "${base}_${format}" : base
 }
 
-// Render one notebook over a cohort. A terminal fan-in: one task over every row of the
-// samplesheet, producing nothing another step consumes, so there is no publish-dir helper
-// and no handoff samplesheet.
-//
-// The step knows nothing about what it is rendering. Which inputs a notebook needs and
-// what it does with them is the notebook's own contract -- it globs what it wants out of
-// the staged input directories -- so a new report is a new notebook and no Nextflow at all.
+// Render one notebook. The step knows nothing about what it is rendering: which inputs a
+// notebook needs and what it does with them is the notebook's own contract -- it globs what it
+// wants out of the staged inputs -- so a new report is a new .qmd and no Nextflow at all.
 process QUARTO_RENDER {
     tag "${stem}"
 
@@ -31,44 +30,34 @@ process QUARTO_RENDER {
     publishDir { publish_dir }, mode: 'copy'
 
     input:
-    // publish_dir and stem are passed in because the two modes differ only in these two
-    // values -- see the workflow below. A directive is a closure evaluated after inputs are
-    // bound, which is why publishDir can reference one.
+    // Everything that varies per render is in the tuple, including the notebook and the
+    // format: a chained run renders a cohort deck and per-sample pages in one invocation, and
+    // either carried as a separate channel or read from params could not express two values in
+    // one run. publish_dir and stem are here for the same reason -- the two modes differ only
+    // in those. A directive is a closure evaluated after inputs are bound, which is why
+    // publishDir can reference one.
     // Staged flat. Every artifact is named <sample>.<step>.<ext>, so nothing collides -- not
     // two samples, and not two steps -- and a notebook picks its inputs apart by globbing the
     // suffix it wants rather than the workflow naming them into subdirectories.
-    tuple val(publish_dir), val(stem), path(inputs)
-    path notebook
-    // Quarto resolves reference-doc and filters relative to the qmd's own directory, so
-    // both have to land beside the staged notebook rather than at their repo paths.
+    tuple val(publish_dir), val(stem), val(format), path(notebook), path(inputs)
+    // Quarto resolves reference-doc and filters relative to the qmd's own directory, so both
+    // have to land beside the staged notebook rather than at their repo paths. Not in the
+    // tuple: they are the same two files for every render.
     path template
     path filter
 
     output:
-    // The whole render as one directory. Quarto writes the document, the deck and the
-    // figure directory into --output-dir together, and the links inside the document are
-    // relative to it, so the directory is what moves rather than any file in it.
+    // The whole render as one directory. Quarto writes the document, the deck and the figure
+    // directory into --output-dir together, and the links inside the document are relative to
+    // it, so the directory is what moves rather than any file in it.
     path "${stem}", emit: report
 
     script:
-    // --to selects one of the formats the notebook declares. Omitted, quarto renders every
-    // one of them in a single pass, which is the old behaviour and still what you want for a
-    // report read one way.
-    //
-    // It exists because the right grouping differs by format. A markdown document is navigated
-    // by file, so fifteen samples in one page is an enormous scroll and a directory of fifteen
-    // pages is browsable. A deck is read linearly in a meeting, where one file with fifteen
-    // sections works and fifteen files is miserable. Same notebook, same content, packaged for
-    // how it gets read:
-    //
-    //   --step render_cohort --to pptx    one deck, every sample
-    //   --step render_sample --to gfm     one page per sample
-    //
-    // No conditional in the notebook: it globs what was staged, so fan-in finds fifteen and
-    // loops fifteen times, fan-out finds one and loops once.
-    def format = params.to ? "--to ${params.to}" : ""
+    // Omitted, quarto renders every format the notebook declares in one pass, which is still
+    // what you want for a report read only one way.
+    def to = format ? "--to ${format}" : ""
     """
-    quarto render ${notebook} ${format} --output-dir ${stem}
+    quarto render ${notebook} ${to} --output-dir ${stem}
     """
 
     stub:
@@ -79,41 +68,59 @@ process QUARTO_RENDER {
     """
 }
 
-// One workflow, two steps. The step name says how rows are grouped -- cohort or sample --
-// and --to says what comes out of it, so a cohort markdown page or a per-sample deck need
-// no new wiring, only the two words that already describe them.
+// Render specs for one grouping and format, as a channel of QUARTO_RENDER input tuples.
+//
+// A function rather than a workflow, because only one of the two entry scripts invokes the
+// process: a chained run mixes renders into a single QUARTO_RENDER call, which it could not do
+// if this invoked the process itself. Building the specs here is what keeps reportDir the only
+// definition of a report's publish path.
+//
+// The two modes exist because the right grouping differs by format. A markdown document is
+// navigated by file, so fifteen samples in one page is an enormous scroll where a directory of
+// fifteen pages is browsable; a deck is read linearly in a meeting, where one file with fifteen
+// sections works and fifteen files is miserable. No conditional in the notebook: it globs what
+// was staged, so a fan-in finds fifteen and loops fifteen times, a fan-out finds one and loops
+// once.
+def renderSpecs(rows, notebook, format, per_sample) {
+    if (per_sample) {
+        // One render per row, the whole run grouped under one directory. Rows are already one
+        // per sample, so fanning out is simply not collecting them.
+        return rows.map { row ->
+            def publish_dir = "${projectDir}/reports/${reportDir(notebook, format)}"
+            tuple(publish_dir, row.sample, format, notebook, pathsOf(row))
+        }
+    }
+
+    // One render over every row. Sorted by sample rather than collected as they arrive:
+    // `collect()` gathers in completion order, so a chained run -- where rows arrive as the
+    // previous step's tasks finish -- would order the report's sections differently from one
+    // run to the next on the same data.
+    return rows
+        .toSortedList { a, b -> a.sample <=> b.sample }
+        .map { sorted -> sorted.collectMany { row -> pathsOf(row) } }
+        .map { paths ->
+            tuple("${projectDir}/reports", reportDir(notebook, format), format, notebook, paths)
+        }
+}
+
 workflow render {
+    // Only `sample` is required of a row. Every other column is a path to stage, because which
+    // inputs a notebook wants is its own business -- naming them here would make this step
+    // specific to one report again.
+    take:
+    rows
+
+    main:
     // Which mode is read off the step name rather than a flag: --step is where a step's
     // behaviour is documented, so deriving it here keeps steps.nf pure dispatch.
     def per_sample = params.step == 'render_sample'
 
-    // Only `sample` is required. Every other column is a path to stage, because which inputs a
-    // notebook wants is its own business -- naming them here would make this step specific to
-    // one report again.
-    validateAndParseSampleSheet(['sample']).set { rows }
+    QUARTO_RENDER(renderSpecs(rows, file(params.notebook), params.to, per_sample),
+                  file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
+                  file("${projectDir}/assets/fold-code.lua"))
 
-    // Assigned in each branch rather than piped out of the if: `if` is a statement in Groovy,
-    // not an expression, so it has no value to pipe.
-    def renders
-    if (per_sample) {
-        // One render per row, the whole run grouped under one directory. Rows are already one
-        // per sample, so fanning out is simply not collecting them.
-        renders = rows.map { row ->
-            tuple("${projectDir}/reports/${reportDir()}", row.sample, pathsOf(row))
-        }
-    } else {
-        renders = rows
-            .toSortedList { a, b -> a.sample <=> b.sample }
-            .map { sorted -> sorted.collectMany { row -> pathsOf(row) } }
-            .map { paths -> tuple("${projectDir}/reports", reportDir(), paths) }
-    }
-
-    QUARTO_RENDER(
-        renders,
-        file(params.notebook),
-        file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
-        file("${projectDir}/assets/fold-code.lua"),
-    )
+    emit:
+    reports = QUARTO_RENDER.out.report
 }
 
 // Every column of a samplesheet row except `sample`, as files to stage.
