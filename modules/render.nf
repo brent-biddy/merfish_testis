@@ -1,24 +1,18 @@
-def pathsOf(Map row) {
-    row.findAll { column, value -> column != 'sample' }
-       .values()
-       .collect { value -> file(value) }
-}
-
 def renderSpecs(rows, notebook, format, per_sample) {
     def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
     def report_dir = format ? "${base}_${format}" : base
 
     if (per_sample) {
-        return rows.map { row ->
-            tuple("${projectDir}/reports/${report_dir}", row.sample, format, notebook, pathsOf(row))
+        return rows.map { sample, paths ->
+            tuple("${projectDir}/reports/${report_dir}", sample, format, notebook, paths)
         }
     }
 
     return rows
-        .toSortedList { a, b -> a.sample <=> b.sample }
-        .map { sorted -> sorted.collectMany { row -> pathsOf(row) } }
-        .map { paths ->
-            tuple("${projectDir}/reports", report_dir, format, notebook, paths)
+        .toSortedList { a, b -> a[0] <=> b[0] }
+        .map { sorted ->
+            tuple("${projectDir}/reports", report_dir, format, notebook,
+                  sorted.collectMany { it[1] })
         }
 }
 

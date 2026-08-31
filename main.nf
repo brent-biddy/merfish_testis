@@ -31,9 +31,9 @@ workflow {
         .map { sample, centroids, zarr ->
             if (!centroids) error "Sample '${sample}' has no centroids: create_centroids did not produce one."
             if (!zarr)      error "Sample '${sample}' has no annotated zarr: annotate_celltypes did not produce one."
-            [sample: sample, centroids: centroids, zarr: zarr]
+            tuple(sample, [centroids, zarr])
         }
-        .set { report_rows } // [sample:, centroids:, zarr:]
+        .set { report_rows } // tuple(sample, staged_paths)
 
     def report_inputs = renderSpecs(report_rows,
                                     file("${projectDir}/notebooks/celltype_report.qmd"),

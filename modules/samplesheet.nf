@@ -15,6 +15,14 @@ def samplePathPairs() {
         .map { row -> tuple(row.sample, file(row.path)) }
 }
 
+def sampleWithPaths() {
+    validateAndParseSampleSheet(['sample'])
+        .map { row ->
+            def sample = row.remove('sample')
+            tuple(sample, row.values().collect { file(it) })
+        }
+}
+
 def samplePathWithSource() {
     validateAndParseSampleSheet(['sample', 'path'])
         .map { row -> tuple(row.sample, file(row.path), row.path) }
