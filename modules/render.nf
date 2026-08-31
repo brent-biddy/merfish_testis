@@ -97,7 +97,11 @@ workflow render {
     // Mode off the step name rather than a flag, so steps.nf stays pure dispatch.
     def per_sample = params.step == 'render_sample'
 
-    QUARTO_RENDER(renderSpecs(rows, file(params.notebook), params.to, per_sample),
+    // tuple(publish_dir, stem, format, notebook, paths to stage). Built by renderSpecs because
+    // the two modes differ in publish_dir and stem.
+    def inputs = renderSpecs(rows, file(params.notebook), params.to, per_sample)
+
+    QUARTO_RENDER(inputs,
                   file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
                   file("${projectDir}/assets/fold-code.lua"))
 

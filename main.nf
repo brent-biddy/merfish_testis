@@ -56,9 +56,13 @@ workflow {
     // Calls the process, not the module workflow: that workflow reads the mode off params.step
     // and a pinned path has no --step. Per-sample pages would be a second renderSpecs call mixed
     // into this channel, since the notebook and format ride in the tuple.
+    // tuple(publish_dir, stem, format, notebook, paths to stage), one element: a cohort render.
+    def report_inputs = renderSpecs(report_rows,
+                                    file("${projectDir}/notebooks/celltype_report.qmd"),
+                                    params.to, false)
+
     QUARTO_RENDER(
-        renderSpecs(report_rows, file("${projectDir}/notebooks/celltype_report.qmd"),
-                    params.to, false),
+        report_inputs,
         file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
         file("${projectDir}/assets/fold-code.lua"),
     )
