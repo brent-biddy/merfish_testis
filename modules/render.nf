@@ -53,7 +53,7 @@ workflow render {
     }
     // tuple(stem, staged_paths)
 
-    QUARTO_RENDER(specs, publish_dir, format ?: '', notebook,
+    QUARTO_RENDER(specs, publish_dir, format, notebook,
                   file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
                   file("${projectDir}/assets/fold-code.lua"))
 
