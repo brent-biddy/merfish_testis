@@ -29,18 +29,18 @@ process ANNOTATE_CELLTYPES {
 workflow annotate_celltypes {
     take:
     // tuple(sample, input path). Both entry points hand over the same shape: main.nf from a
-    zarrs
+    ch_zarrs
 
     main:
-    zarrs.map { sample, input_path ->
+    ch_zarrs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/annotate_celltypes", input_path)
         }
-        .set { annotate_celltypes_inputs } // tuple(sample, publish_dir, zarr)
+        .set { ch_annotate_celltypes_inputs } // tuple(sample, publish_dir, zarr)
 
     def reference = file(params.reference
         ?: "${projectDir}/assets/reference/shami_human_testis_centroids.csv.gz")
 
-    ANNOTATE_CELLTYPES(annotate_celltypes_inputs, reference, file("${projectDir}/bin/timer.py"))
+    ANNOTATE_CELLTYPES(ch_annotate_celltypes_inputs, reference, file("${projectDir}/bin/timer.py"))
 
     ANNOTATE_CELLTYPES.out.artifacts
         .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }

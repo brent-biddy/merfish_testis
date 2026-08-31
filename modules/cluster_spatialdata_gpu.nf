@@ -28,15 +28,15 @@ process CLUSTER_SPATIALDATA_GPU {
 workflow cluster_spatialdata_gpu {
     take:
     // tuple(sample, input path). Both entry points hand over the same shape: main.nf from a
-    zarrs
+    ch_zarrs
 
     main:
-    zarrs.map { sample, input_path ->
+    ch_zarrs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/cluster_spatialdata_gpu", input_path)
         }
-        .set { cluster_spatialdata_gpu_inputs } // tuple(sample, publish_dir, zarr)
+        .set { ch_cluster_spatialdata_gpu_inputs } // tuple(sample, publish_dir, zarr)
 
-    CLUSTER_SPATIALDATA_GPU(cluster_spatialdata_gpu_inputs, file("${projectDir}/bin/timer.py"))
+    CLUSTER_SPATIALDATA_GPU(ch_cluster_spatialdata_gpu_inputs, file("${projectDir}/bin/timer.py"))
 
     CLUSTER_SPATIALDATA_GPU.out.artifacts
         .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }

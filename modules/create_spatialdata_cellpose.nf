@@ -28,16 +28,16 @@ process CREATE_SPATIALDATA_CELLPOSE {
 workflow create_spatialdata_cellpose {
     take:
     // tuple(sample, region dir, vpt dir)
-    regionDirs
+    ch_region_dirs
 
     main:
-    regionDirs.map { sample, region_dir, vpt_dir ->
+    ch_region_dirs.map { sample, region_dir, vpt_dir ->
             tuple(sample, "${params.outdir}/${sample}/create_spatialdata_cellpose",
                   region_dir, vpt_dir)
         }
-        .set { create_spatialdata_cellpose_inputs } // tuple(sample, publish_dir, region_dir, vpt_dir)
+        .set { ch_create_spatialdata_cellpose_inputs } // tuple(sample, publish_dir, region_dir, vpt_dir)
 
-    CREATE_SPATIALDATA_CELLPOSE(create_spatialdata_cellpose_inputs, file("${projectDir}/bin/timer.py"))
+    CREATE_SPATIALDATA_CELLPOSE(ch_create_spatialdata_cellpose_inputs, file("${projectDir}/bin/timer.py"))
 
     CREATE_SPATIALDATA_CELLPOSE.out.artifacts
         .map { sample, publish_dir, zarr -> "${sample},${publish_dir}/${zarr.name}" }

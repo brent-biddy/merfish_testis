@@ -33,7 +33,7 @@ workflow {
             if (!zarr)      error "Sample '${sample}' has no annotated zarr: annotate_celltypes did not produce one."
             tuple(sample, [centroids, zarr])
         }
-        .set { report_samples } // tuple(sample, staged_paths)
+        .set { ch_report_samples } // tuple(sample, staged_paths)
 
-    render(report_samples, file("${projectDir}/notebooks/celltype_report.qmd"), params.to, false)
+    render(ch_report_samples, file("${projectDir}/notebooks/celltype_report.qmd"), params.to, false)
 }

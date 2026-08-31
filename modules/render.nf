@@ -29,26 +29,26 @@ process QUARTO_RENDER {
 
 workflow render {
     take:
-    samples
-    notebook
-    format
-    per_sample
+    ch_samples
+    val_notebook
+    val_format
+    val_per_sample
 
     main:
-    def report_name = "${file(notebook).baseName}_${params.run_id}_${format}"
+    def report_name = "${file(val_notebook).baseName}_${params.run_id}_${val_format}"
 
-    if (per_sample) {
+    if (val_per_sample) {
         publish_dir = "${projectDir}/reports/${report_name}"
-        samples.set { quarto_render_inputs } // tuple(output_dir, staged_paths)
+        ch_samples.set { ch_quarto_render_inputs } // tuple(output_dir, staged_paths)
     }
     else {
         publish_dir = "${projectDir}/reports"
-        samples.toSortedList { a, b -> a[0] <=> b[0] }
+        ch_samples.toSortedList { a, b -> a[0] <=> b[0] }
             .map { sorted -> tuple(report_name, sorted.collectMany { it[1] }) }
-            .set { quarto_render_inputs } // tuple(output_dir, staged_paths)
+            .set { ch_quarto_render_inputs } // tuple(output_dir, staged_paths)
     }
 
-    QUARTO_RENDER(quarto_render_inputs, publish_dir, format, notebook,
+    QUARTO_RENDER(ch_quarto_render_inputs, publish_dir, val_format, val_notebook,
                   file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
                   file("${projectDir}/assets/fold-code.lua"))
 

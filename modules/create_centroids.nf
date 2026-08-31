@@ -33,15 +33,15 @@ process CREATE_CENTROIDS {
 workflow create_centroids {
     take:
     // tuple(sample, zarr, the zarr's published location). The third element is what the
-    zarrs
+    ch_zarrs
 
     main:
-    zarrs.map { sample, zarr, input_dir ->
+    ch_zarrs.map { sample, zarr, input_dir ->
             tuple(sample, "${params.outdir}/${sample}/create_centroids", zarr, input_dir)
         }
-        .set { create_centroids_inputs } // tuple(sample, publish_dir, zarr, input_dir)
+        .set { ch_create_centroids_inputs } // tuple(sample, publish_dir, zarr, input_dir)
 
-    CREATE_CENTROIDS(create_centroids_inputs, file("${projectDir}/bin/timer.py"))
+    CREATE_CENTROIDS(ch_create_centroids_inputs, file("${projectDir}/bin/timer.py"))
 
     def sheet = params.group_by ? "create_centroids_${params.group_by}" : 'create_centroids'
 

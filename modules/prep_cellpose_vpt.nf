@@ -28,16 +28,16 @@ process PREP_CELLPOSE_VPT {
 workflow prep_cellpose_vpt {
     take:
     // tuple(sample, region path, cellpose dir). The region path travels as a value as well
-    segmentations
+    ch_segmentations
 
     main:
-    segmentations.map { sample, region_path, cellpose_dir ->
+    ch_segmentations.map { sample, region_path, cellpose_dir ->
             tuple(sample, "${params.outdir}/${sample}/prep_cellpose_vpt",
                   region_path, file(region_path), cellpose_dir)
         }
-        .set { prep_cellpose_vpt_inputs } // tuple(sample, publish_dir, region_path, region_file, cellpose_dir)
+        .set { ch_prep_cellpose_vpt_inputs } // tuple(sample, publish_dir, region_path, region_file, cellpose_dir)
 
-    PREP_CELLPOSE_VPT(prep_cellpose_vpt_inputs, file("${projectDir}/bin/timer.py"))
+    PREP_CELLPOSE_VPT(ch_prep_cellpose_vpt_inputs, file("${projectDir}/bin/timer.py"))
 
     PREP_CELLPOSE_VPT.out.artifacts
         .map { sample, publish_dir, region_path, files -> "${sample},${region_path},${publish_dir}" }

@@ -26,15 +26,15 @@ process CREATE_SPATIALDATA {
 workflow create_spatialdata {
     take:
     // tuple(sample, input path). Both entry points hand over the same shape: main.nf from a
-    regionDirs
+    ch_region_dirs
 
     main:
-    regionDirs.map { sample, input_path ->
+    ch_region_dirs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/create_spatialdata", input_path)
         }
-        .set { create_spatialdata_inputs } // tuple(sample, publish_dir, region_dir)
+        .set { ch_create_spatialdata_inputs } // tuple(sample, publish_dir, region_dir)
 
-    CREATE_SPATIALDATA(create_spatialdata_inputs, file("${projectDir}/bin/timer.py"))
+    CREATE_SPATIALDATA(ch_create_spatialdata_inputs, file("${projectDir}/bin/timer.py"))
 
     CREATE_SPATIALDATA.out.artifacts
         .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }
