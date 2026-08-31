@@ -14,10 +14,6 @@ v1 is the size ranking and is what downstream steps mean by a cluster id.
 
 Writes <outdir>/<sample>.cluster_spatialdata_gpu.zarr plus a timing TSV.
 
-The step name is in the filename so every artifact in the project is uniquely named
-by sample and step. Nothing collides when files are staged flat, which is what lets a
-report notebook glob one step's output without the workflow naming its inputs.
-
 Usage:
     cluster_spatialdata_gpu.py --sample testis_01 \\
         --path results/testis_01/create_spatialdata/testis_01.zarr \\
@@ -65,8 +61,16 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="GPU-accelerated clustering of a SpatialData zarr"
     )
-    parser.add_argument("--sample", required=True, help="Sample identifier")
-    parser.add_argument("--path", required=True, help="Path to input SpatialData zarr")
+    parser.add_argument(
+        "--sample",
+        required=True,
+        help="Sample identifier",
+    )
+    parser.add_argument(
+        "--path",
+        required=True,
+        help="Path to input SpatialData zarr",
+    )
     parser.add_argument(
         "--outdir",
         default=".",

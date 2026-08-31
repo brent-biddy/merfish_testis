@@ -41,9 +41,15 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Build per-cluster centroids from a clustered SpatialData zarr"
     )
-    parser.add_argument("--sample", required=True, help="Sample identifier")
     parser.add_argument(
-        "--path", required=True, help="Clustered SpatialData zarr from cluster_spatialdata_gpu"
+        "--sample",
+        required=True,
+        help="Sample identifier",
+    )
+    parser.add_argument(
+        "--path",
+        required=True,
+        help="Clustered SpatialData zarr from cluster_spatialdata_gpu",
     )
     parser.add_argument(
         "--outdir",

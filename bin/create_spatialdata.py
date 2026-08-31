@@ -15,10 +15,6 @@ Later steps read the Zarr store rather than the MERSCOPE directory.
 
 Writes <outdir>/<sample>.create_spatialdata.zarr plus a timing TSV.
 
-The step name is in the filename so every artifact in the project is uniquely named
-by sample and step. Nothing collides when files are staged flat, which is what lets a
-report notebook glob one step's output without the workflow naming its inputs.
-
 Usage:
     create_spatialdata.py --sample testis_01 \\
         --path data/raw/testis_01 \\
@@ -150,8 +146,16 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Convert a Vizgen MERSCOPE output directory to a SpatialData Zarr store"
     )
-    parser.add_argument("--sample", required=True, help="Sample identifier")
-    parser.add_argument("--path", required=True, help="MERSCOPE region output directory")
+    parser.add_argument(
+        "--sample",
+        required=True,
+        help="Sample identifier",
+    )
+    parser.add_argument(
+        "--path",
+        required=True,
+        help="MERSCOPE region output directory",
+    )
     parser.add_argument(
         "--outdir",
         default=".",

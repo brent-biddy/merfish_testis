@@ -15,10 +15,6 @@ annotation and report steps read it unchanged.
 
 Writes <outdir>/<sample>.create_spatialdata_cellpose.zarr plus a timing TSV.
 
-The step name is in the filename so every artifact in the project is uniquely named
-by sample and step. Nothing collides when files are staged flat, which is what lets a
-report notebook glob one step's output without the workflow naming its inputs.
-
 Usage:
     create_spatialdata_cellpose.py --sample b2r0_cellpose \\
         --path data/raw/MsTestis_B2/region_0 \\
@@ -91,7 +87,11 @@ def parse_args():
         description="Convert a cellpose re-segmentation of a MERSCOPE region to a "
                     "SpatialData Zarr store"
     )
-    parser.add_argument("--sample", required=True, help="Sample identifier")
+    parser.add_argument(
+        "--sample",
+        required=True,
+        help="Sample identifier",
+    )
     parser.add_argument(
         "--path",
         required=True,

@@ -244,7 +244,11 @@ def parse_args():
         description="Convert a bespoke cellpose segmentation of a MERSCOPE region to VPT "
                     "output files"
     )
-    parser.add_argument("--sample", required=True, help="Sample identifier")
+    parser.add_argument(
+        "--sample",
+        required=True,
+        help="Sample identifier",
+    )
     parser.add_argument(
         "--path",
         required=True,
