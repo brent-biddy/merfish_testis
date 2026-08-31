@@ -36,17 +36,18 @@ workflow render {
     per_sample
 
     main:
-    def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
-    def report_dir = format ? "${base}_${format}" : base
+    def report_name = "${file(notebook).baseName}_${params.run_id}"
+    if (params.report_id) report_name = params.report_id
+    if (format)           report_name = "${report_name}_${format}"
 
     if (per_sample) {
-        publish_dir = "${projectDir}/reports/${report_dir}"
+        publish_dir = "${projectDir}/reports/${report_name}"
         rows.set { specs } // tuple(stem, staged_paths)
     }
     else {
         publish_dir = "${projectDir}/reports"
         rows.toSortedList { a, b -> a[0] <=> b[0] }
-            .map { sorted -> tuple(report_dir, sorted.collectMany { it[1] }) }
+            .map { sorted -> tuple(report_name, sorted.collectMany { it[1] }) }
             .set { specs } // tuple(stem, staged_paths)
     }
 
