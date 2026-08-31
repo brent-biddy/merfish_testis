@@ -99,7 +99,7 @@ filename prefixes.
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.<step>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.<step>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
-| 5 | `--notebook`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the notebook globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<notebook>_<run_id>/<notebook>.{pptx,md}` |
+| 5 | `--notebook`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the notebook globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<notebook>_<run_id>[_<to>]/`, one directory per render — `render_sample` nests one per sample inside it |
 
 ### 1. create_spatialdata
 
@@ -316,10 +316,27 @@ nextflow run steps.nf -profile wsl --step create_centroids --group_by cell_type 
     --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
-### 5. quarto_render
+### 5. render_cohort and render_sample
 
-Renders the notebook named by `--notebook` over a cohort. A terminal step — nothing
-consumes it.
+Renders the notebook named by `--notebook`. Terminal steps — nothing consumes them.
+
+Two steps, one workflow. The step name says how rows are grouped — `render_cohort` renders
+every row in one pass, `render_sample` renders one per row — and `--to` says which of the
+formats the notebook declares comes out of it. Omitting `--to` renders every declared format
+in one pass.
+
+They are separate because the right grouping differs by format. A markdown document is
+navigated by file, so fifteen samples in one page is an enormous scroll where a directory of
+fifteen pages is browsable; a deck is read linearly in a meeting, where one file with fifteen
+sections works and fifteen files is miserable.
+
+```bash
+--step render_cohort --to pptx    # one deck, every sample
+--step render_sample --to gfm     # one page per sample
+```
+
+The notebook needs no conditional for this: it globs what was staged, so a cohort render finds
+every sample and loops over them while a per-sample render finds one and loops once.
 
 The step knows nothing about what it is rendering. It requires only a `sample` column and
 stages every other column's path, one per directory; which of them a notebook wants, and
@@ -353,34 +370,50 @@ neighbouring numbers are transcriptionally adjacent and the heatmaps read as a b
 diagonal. Figures are labelled `v1 (v2)`. **`v1` is what a call is written against** — it
 is fixed in the object, while `v2` moves whenever the clustering or the gene set changes.
 
-This is the only step that publishes into the repo. It writes `reports/`, not
-`results/<run_id>/`, because its product is the one that is source-controlled: the
+These are the only steps that publish into the repo. They write `reports/`, not
+`results/<run_id>/`, because their product is the one that is source-controlled: the
 markdown and its figures are committed, being what GitHub renders, and the deck is
 gitignored, being the same content in a format git cannot diff.
 
-Each render gets its own directory, `reports/<notebook>_<run_id>/`, holding the document,
-the figure directory and the deck together. Quarto writes all three into `--output-dir`
-and the document's links are relative to it, so the directory moves as a unit and renders
-on GitHub wherever it sits. The notebook leads the name so a listing groups a report type
-together; the run id ties the render to the results tree it was built from. `--report_id`
-replaces the whole name when the render deserves one of its own:
+Each render gets its own directory, `reports/<notebook>_<run_id>_<to>/`, holding the
+document, the figure directory and the deck together. Quarto writes all three into
+`--output-dir` and the document's links are relative to it, so the directory moves as a unit
+and renders on GitHub wherever it sits. The notebook leads the name so a listing groups a
+report type together; the run id names the render invocation, not the results tree it read —
+those are different runs, since a render takes a samplesheet pointing at some earlier run's
+published paths, and what a render was built from is in that samplesheet. The format is part
+of it because the two packagings of one notebook are different artifacts produced by separate
+runs, and sharing a name put the per-sample pages inside the cohort render's own directory;
+it is appended only when `--to` is given, so a render of every declared format has no suffix.
+A `render_sample` run nests one directory per sample inside that.
+`--report_id` replaces the notebook and run id when a render deserves a name of its own —
+the format is still appended:
 
 ```bash
-nextflow run steps.nf -profile wsl --step quarto_render --run_id cellpose_cmp \
+# One deck over the cohort.
+nextflow run steps.nf -profile wsl --step render_cohort --to pptx --run_id cellpose_cmp \
     --notebook notebooks/celltype_report.qmd \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
-# -> reports/celltype_report_cellpose_cmp/celltype_report.md
+# -> reports/celltype_report_cellpose_cmp_pptx/celltype_report.pptx
 
-nextflow run steps.nf -profile wsl --step quarto_render --run_id cellpose_cmp \
+# The same samples as one browsable page each, from a notebook whose prose was rewritten
+# for that comparison, under a name of its own.
+nextflow run steps.nf -profile wsl --step render_sample --to gfm \
+    --report_id cellpose_cmp_pages \
     --notebook notebooks/celltype_report_cellpose.qmd \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
-# -> reports/celltype_report_cellpose_cmp1/celltype_report_cellpose.md
+# -> reports/cellpose_cmp_pages_gfm/<sample>/celltype_report_cellpose.md
 ```
 
-The second is a copy of the first notebook with its prose rewritten for that comparison.
-Commentary about one render belongs in the notebook it renders, next to the figure it is
-about — which is why a variant is a copied `.qmd` rather than a note injected from
-outside. The cost is that a fix to a shared figure has to land in each copy.
+The second renders a copy of the first notebook, with its prose rewritten for that
+comparison. Commentary about one render belongs in the notebook it renders, next to the
+figure it is about — which is why a variant is a copied `.qmd` rather than a note injected
+from outside. The cost is that a fix to a shared figure has to land in each copy.
+
+One collision is left on purpose: the same format in both modes — `render_cohort --to gfm`
+alongside `render_sample --to gfm` — still shares a directory, since the grouping is not in
+the name. The pairing above avoids it; making it impossible would mean naming the grouping
+too, for a case nothing needs yet.
 
 Because no two renders share a directory, nothing overwrites anything — which also means
 `reports/` accumulates. Prune the ones not worth keeping before committing.
@@ -419,8 +452,8 @@ assets/reference/  cell type centroids to annotate against; see each file's head
 data/raw/        raw instrument output (not committed)
 results/<run_id>/  published step output (not committed)
 reports/README.md  hand-written index of the renders worth keeping
-reports/<notebook>_<run_id>/  one directory per render: markdown and figures
-                 committed, the deck not
+reports/<notebook>_<run_id>[_<to>]/  one directory per render: markdown and figures
+                 committed, the deck not; render_sample nests one dir per sample
 ```
 
 `reports/` is the only output that is committed. Everything else under the repo is
