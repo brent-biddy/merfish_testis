@@ -29,7 +29,7 @@ process QUARTO_RENDER {
 
 workflow render {
     take:
-    rows
+    samples
     notebook
     format
     per_sample
@@ -39,16 +39,16 @@ workflow render {
 
     if (per_sample) {
         publish_dir = "${projectDir}/reports/${report_name}"
-        rows.set { specs } // tuple(output_dir, staged_paths)
+        samples.set { quarto_render_inputs } // tuple(output_dir, staged_paths)
     }
     else {
         publish_dir = "${projectDir}/reports"
-        rows.toSortedList { a, b -> a[0] <=> b[0] }
+        samples.toSortedList { a, b -> a[0] <=> b[0] }
             .map { sorted -> tuple(report_name, sorted.collectMany { it[1] }) }
-            .set { specs } // tuple(output_dir, staged_paths)
+            .set { quarto_render_inputs } // tuple(output_dir, staged_paths)
     }
 
-    QUARTO_RENDER(specs, publish_dir, format, notebook,
+    QUARTO_RENDER(quarto_render_inputs, publish_dir, format, notebook,
                   file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
                   file("${projectDir}/assets/fold-code.lua"))
 
