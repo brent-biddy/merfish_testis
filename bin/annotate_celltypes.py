@@ -71,7 +71,7 @@ def main():
     with timer("Read reference"):
         reference = pd.read_csv(args.reference, comment="#", index_col=0)
 
-        # Case-insensitive so mouse Acta2 finds human ACTA2; ones that then collide are ambiguous.
+        # Case-insensitive so mouse Acta2 finds human ACTA2; collisions are ambiguous, so dropped.
         reference.index = reference.index.str.upper()
         collided = reference.index.duplicated(keep=False)
         if collided.any():
@@ -114,7 +114,7 @@ def main():
         )
 
     with timer("Standardize"):
-        # Within each cell: raw values scale with genes captured, so never compare across cells.
+        # Raw values scale with genes captured, so standardize within each cell.
         correlation = correlation.sub(correlation.mean(axis=1), axis=0).div(
             correlation.std(axis=1), axis=0
         )
