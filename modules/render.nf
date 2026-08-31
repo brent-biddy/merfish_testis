@@ -44,8 +44,8 @@ workflow render {
     }
     else {                  // -> reports/<report_name>/, one render over all samples
         publish_dir = "${projectDir}/reports"
-        ch_samples.toSortedList { a, b -> a[0] <=> b[0] }
-            .map { sorted -> tuple(report_name, sorted.collectMany { it[1] }) }
+        ch_samples.toSortedList { it[0] }   // by sample
+            .map { sorted -> tuple(report_name, sorted.collectMany { sample, paths -> paths }) }
             .set { ch_quarto_render_inputs } // tuple(output_dir, staged_paths)
     }
 
