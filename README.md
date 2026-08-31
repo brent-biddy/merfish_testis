@@ -385,9 +385,8 @@ published paths, and what a render was built from is in that samplesheet. The fo
 of it because the two packagings of one notebook are different artifacts produced by separate
 runs, and sharing a name put the per-sample pages inside the cohort render's own directory;
 it is appended only when `--to` is given, so a render of every declared format has no suffix.
-A `render_sample` run nests one directory per sample inside that.
-`--report_id` replaces the notebook and run id when a render deserves a name of its own —
-the format is still appended:
+A `render_sample` run nests one directory per sample inside that. `--run_id` names a render
+when it deserves a name of its own:
 
 ```bash
 # One deck over the cohort.
@@ -397,12 +396,11 @@ nextflow run steps.nf -profile wsl --step render_cohort --to pptx --run_id cellp
 # -> reports/celltype_report_cellpose_cmp_pptx/celltype_report.pptx
 
 # The same samples as one browsable page each, from a notebook whose prose was rewritten
-# for that comparison, under a name of its own.
-nextflow run steps.nf -profile wsl --step render_sample --to gfm \
-    --report_id cellpose_cmp_pages \
+# for that comparison.
+nextflow run steps.nf -profile wsl --step render_sample --to gfm --run_id cellpose_cmp \
     --notebook notebooks/celltype_report_cellpose.qmd \
     --samplesheet <run>/results/create_centroids_samplesheet.csv
-# -> reports/cellpose_cmp_pages_gfm/<sample>/celltype_report_cellpose.md
+# -> reports/celltype_report_cellpose_cellpose_cmp_gfm/<sample>/celltype_report_cellpose.md
 ```
 
 The second renders a copy of the first notebook, with its prose rewritten for that

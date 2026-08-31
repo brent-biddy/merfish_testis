@@ -37,8 +37,7 @@ workflow render {
 
     main:
     def report_name = "${file(notebook).baseName}_${params.run_id}"
-    if (params.report_id) report_name = params.report_id
-    if (format)           report_name = "${report_name}_${format}"
+    if (format) report_name = "${report_name}_${format}"
 
     if (per_sample) {
         publish_dir = "${projectDir}/reports/${report_name}"
