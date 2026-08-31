@@ -4,10 +4,8 @@
 //
 //   nextflow run steps.nf -profile wsl --step <name> --samplesheet <path>
 //
-// The other entry script is main.nf, which replays the finished analysis as one run. These
-// two are peers: this file is what you iterate with, main.nf is the result you keep. It is
-// named steps.nf rather than main.nf so `nextflow run .` gives someone the analysis, not the
-// tooling.
+// Peer of main.nf, which replays a finished analysis as one run. Named steps.nf so
+// `nextflow run .` gives someone the analysis, not the tooling.
 //
 // Steps:
 //   create_spatialdata       samplesheet: sample, path   (path = MERSCOPE region directory)
@@ -25,14 +23,10 @@
 //   render_sample            same samplesheet and --notebook; one render per row
 //                            --notebook names the report to render
 //
-// Each step is independent: there is no chaining here. A step that consumes another's output
-// takes a samplesheet pointing at the prior step's published paths — and every step writes the
-// next one's samplesheet into params.outdir, so that path is something a run hands you rather
-// than something you assemble. Any step can be rerun on its own without re-running what came
-// before.
-//
-// This file only dispatches. A step's process and its workflow live together in its module,
-// and each module workflow takes an input channel, so main.nf can call the same workflows.
+// No chaining here. Every step writes the next one's samplesheet into params.outdir, so a
+// consuming step takes a path a run handed you rather than one you assembled, and any step can
+// be rerun on its own. Dispatch only: process and workflow live together in the module, and each
+// module workflow takes an input channel so main.nf can call the same ones.
 
 include { create_spatialdata      } from './modules/create_spatialdata'
 include { prep_cellpose_vpt       } from './modules/prep_cellpose_vpt'
