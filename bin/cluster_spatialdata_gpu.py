@@ -9,7 +9,7 @@ zarr I/O.
 There is no highly-variable-gene selection: a MERFISH panel is a few hundred curated
 markers, so every gene is used.
 
-Each swept resolution leaves two obs columns, leiden_res_<r>_v0 and leiden_res_<r>_v1.
+Each swept resolution leaves two obs columns, e.g. leiden_res_0.10_v0 and leiden_res_0.10_v1.
 v1 is the size ranking and is what downstream steps mean by a cluster id.
 
 Writes <outdir>/<sample>.cluster_spatialdata_gpu.zarr plus a timing TSV.
@@ -28,8 +28,7 @@ import spatialdata
 
 from timer import timer, timing_summary
 
-# Leiden resolutions to sweep; two obs columns are written per value, leiden_res_<r>_v0
-# and leiden_res_<r>_v1.
+# Leiden resolutions to sweep.
 RESOLUTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
                1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
 
@@ -130,7 +129,6 @@ def main():
     with timer("Filter"):
         n_before = adata.n_obs
         # Quantile on the unfiltered table, before min_counts removes the low tail.
-        # transcript_count is singular, unlike Xenium's transcript_counts.
         max_counts = (
             float(adata.obs["transcript_count"].quantile(args.max_counts_quantile))
             if args.max_counts_quantile else None
@@ -146,10 +144,7 @@ def main():
     with timer("Normalize"):
         adata.layers["counts"] = adata.X.copy()
         # No target_sum, so the default applies: the median pre-normalization cell total.
-        # A fixed target far from the panel's own scale scales every cell by a factor
-        # inversely proportional to its depth, and log1p carries that straight into the
-        # values. The cost is that lognorm is a per-sample scale, so anything comparing
-        # across samples normalizes from layers["counts"] itself.
+        # That makes lognorm a per-sample scale -- compare across samples from counts.
         rsc.pp.normalize_total(adata, inplace=True)
         rsc.pp.log1p(adata)
         # Preserved before scaling overwrites X; downstream annotation reads this.
@@ -167,8 +162,7 @@ def main():
     with timer("UMAP"):
         rsc.tl.umap(adata, random_state=0)
 
-    # Sweep resolutions rather than committing to one: the neighbour graph is already
-    # built, so each extra resolution only re-runs community detection on it.
+    # Sweep resolutions rather than committing to one.
     for res in RESOLUTIONS:
         leiden_key = f"leiden_res_{res:.2f}_v0"
         ranked_key = f"leiden_res_{res:.2f}_v1"
