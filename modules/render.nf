@@ -1,21 +1,3 @@
-def renderSpecs(rows, notebook, format, per_sample) {
-    def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
-    def report_dir = format ? "${base}_${format}" : base
-
-    if (per_sample) {
-        return rows.map { sample, paths ->
-            tuple("${projectDir}/reports/${report_dir}", sample, format, notebook, paths)
-        }
-    }
-
-    return rows
-        .toSortedList { a, b -> a[0] <=> b[0] }
-        .map { sorted ->
-            tuple("${projectDir}/reports", report_dir, format, notebook,
-                  sorted.collectMany { it[1] })
-        }
-}
-
 process QUARTO_RENDER {
     tag "${stem}"
 
@@ -51,7 +33,23 @@ workflow render {
     per_sample
 
     main:
-    def inputs = renderSpecs(rows, notebook, format, per_sample)
+    def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
+    def report_dir = format ? "${base}_${format}" : base
+
+    def inputs
+    if (per_sample) {
+        inputs = rows.map { sample, paths ->
+            tuple("${projectDir}/reports/${report_dir}", sample, format, notebook, paths)
+        }
+    }
+    else {
+        inputs = rows
+            .toSortedList { a, b -> a[0] <=> b[0] }
+            .map { sorted ->
+                tuple("${projectDir}/reports", report_dir, format, notebook,
+                      sorted.collectMany { it[1] })
+            }
+    }
     // tuple(publish_dir, stem, format, notebook, staged_paths)
 
     QUARTO_RENDER(inputs,
