@@ -34,9 +34,9 @@ workflow cluster_spatialdata_gpu {
     zarrs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/cluster_spatialdata_gpu", input_path)
         }
-        .set { inputs } // tuple(sample, publish_dir, zarr)
+        .set { cluster_spatialdata_gpu_inputs } // tuple(sample, publish_dir, zarr)
 
-    CLUSTER_SPATIALDATA_GPU(inputs, file("${projectDir}/bin/timer.py"))
+    CLUSTER_SPATIALDATA_GPU(cluster_spatialdata_gpu_inputs, file("${projectDir}/bin/timer.py"))
 
     CLUSTER_SPATIALDATA_GPU.out.artifacts
         .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }

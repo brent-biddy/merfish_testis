@@ -32,9 +32,9 @@ workflow create_spatialdata {
     regionDirs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/create_spatialdata", input_path)
         }
-        .set { inputs } // tuple(sample, publish_dir, region_dir)
+        .set { create_spatialdata_inputs } // tuple(sample, publish_dir, region_dir)
 
-    CREATE_SPATIALDATA(inputs, file("${projectDir}/bin/timer.py"))
+    CREATE_SPATIALDATA(create_spatialdata_inputs, file("${projectDir}/bin/timer.py"))
 
     CREATE_SPATIALDATA.out.artifacts
         .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }

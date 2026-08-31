@@ -35,9 +35,9 @@ workflow prep_cellpose_vpt {
             tuple(sample, "${params.outdir}/${sample}/prep_cellpose_vpt",
                   region_path, file(region_path), cellpose_dir)
         }
-        .set { inputs } // tuple(sample, publish_dir, region_path, region_file, cellpose_dir)
+        .set { prep_cellpose_vpt_inputs } // tuple(sample, publish_dir, region_path, region_file, cellpose_dir)
 
-    PREP_CELLPOSE_VPT(inputs, file("${projectDir}/bin/timer.py"))
+    PREP_CELLPOSE_VPT(prep_cellpose_vpt_inputs, file("${projectDir}/bin/timer.py"))
 
     PREP_CELLPOSE_VPT.out.artifacts
         .map { sample, publish_dir, region_path, files -> "${sample},${region_path},${publish_dir}" }

@@ -35,9 +35,9 @@ workflow create_spatialdata_cellpose {
             tuple(sample, "${params.outdir}/${sample}/create_spatialdata_cellpose",
                   region_dir, vpt_dir)
         }
-        .set { inputs } // tuple(sample, publish_dir, region_dir, vpt_dir)
+        .set { create_spatialdata_cellpose_inputs } // tuple(sample, publish_dir, region_dir, vpt_dir)
 
-    CREATE_SPATIALDATA_CELLPOSE(inputs, file("${projectDir}/bin/timer.py"))
+    CREATE_SPATIALDATA_CELLPOSE(create_spatialdata_cellpose_inputs, file("${projectDir}/bin/timer.py"))
 
     CREATE_SPATIALDATA_CELLPOSE.out.artifacts
         .map { sample, publish_dir, zarr -> "${sample},${publish_dir}/${zarr.name}" }

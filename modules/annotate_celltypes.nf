@@ -35,12 +35,12 @@ workflow annotate_celltypes {
     zarrs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/annotate_celltypes", input_path)
         }
-        .set { inputs } // tuple(sample, publish_dir, zarr)
+        .set { annotate_celltypes_inputs } // tuple(sample, publish_dir, zarr)
 
     def reference = file(params.reference
         ?: "${projectDir}/assets/reference/shami_human_testis_centroids.csv.gz")
 
-    ANNOTATE_CELLTYPES(inputs, reference, file("${projectDir}/bin/timer.py"))
+    ANNOTATE_CELLTYPES(annotate_celltypes_inputs, reference, file("${projectDir}/bin/timer.py"))
 
     ANNOTATE_CELLTYPES.out.artifacts
         .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }
