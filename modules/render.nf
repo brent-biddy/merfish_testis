@@ -39,19 +39,17 @@ workflow render {
     def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
     def report_dir = format ? "${base}_${format}" : base
 
-    def publish_dir
-    def specs
+    def publish_dir = per_sample ? "${projectDir}/reports/${report_dir}"
+                                 : "${projectDir}/reports"
+
     if (per_sample) {
-        publish_dir = "${projectDir}/reports/${report_dir}"
-        specs = rows
+        rows.set { specs } // tuple(stem, staged_paths)
     }
     else {
-        publish_dir = "${projectDir}/reports"
-        specs = rows
-            .toSortedList { a, b -> a[0] <=> b[0] }
+        rows.toSortedList { a, b -> a[0] <=> b[0] }
             .map { sorted -> tuple(report_dir, sorted.collectMany { it[1] }) }
+            .set { specs } // tuple(stem, staged_paths)
     }
-    // tuple(stem, staged_paths)
 
     QUARTO_RENDER(specs, publish_dir, format, notebook,
                   file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
