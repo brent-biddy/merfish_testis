@@ -38,11 +38,11 @@ workflow render {
     // <qmd basename>_<run_id>_<format>, e.g. celltype_report_20260831_143022_pptx
     def report_name = "${file(val_qmd_file).baseName}_${params.run_id}_${val_quarto_format}"
 
-    if (val_per_sample) {   // true: one render per sample, nested under the report dir
+    if (val_per_sample) {   // -> reports/<report_name>/<sample>/, one render per sample
         publish_dir = "${projectDir}/reports/${report_name}"
         ch_samples.set { ch_quarto_render_inputs } // tuple(output_dir, staged_paths)
     }
-    else {                  // false: one render over every sample, straight into reports/
+    else {                  // -> reports/<report_name>/,          one render over all samples
         publish_dir = "${projectDir}/reports"
         ch_samples.toSortedList { a, b -> a[0] <=> b[0] }
             .map { sorted -> tuple(report_name, sorted.collectMany { it[1] }) }
