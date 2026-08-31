@@ -30,12 +30,12 @@ process QUARTO_RENDER {
 workflow render {
     take:
     ch_samples
-    val_notebook
+    val_qmd_file
     val_quarto_format
     val_per_sample
 
     main:
-    def report_name = "${file(val_notebook).baseName}_${params.run_id}_${val_quarto_format}"
+    def report_name = "${file(val_qmd_file).baseName}_${params.run_id}_${val_quarto_format}"
 
     if (val_per_sample) {
         publish_dir = "${projectDir}/reports/${report_name}"
@@ -48,7 +48,7 @@ workflow render {
             .set { ch_quarto_render_inputs } // tuple(output_dir, staged_paths)
     }
 
-    QUARTO_RENDER(ch_quarto_render_inputs, publish_dir, val_quarto_format, val_notebook,
+    QUARTO_RENDER(ch_quarto_render_inputs, publish_dir, val_quarto_format, val_qmd_file,
                   file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
                   file("${projectDir}/assets/fold-code.lua"))
 
