@@ -8,8 +8,8 @@ process QUARTO_RENDER {
     val publish_dir
     val format
     path notebook
-    path template
-    path filter
+    path pptx_template_file
+    path gfm_code_fold_filter
 
     output:
     path "${output_dir}", emit: report
