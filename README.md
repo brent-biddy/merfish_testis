@@ -99,7 +99,7 @@ filename prefixes.
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.<step>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.<step>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
-| 5 | `--notebook`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the notebook globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<notebook>_<run_id>[_<to>]/`, one directory per render — `render_sample` nests one per sample inside it |
+| 5 | `--notebook`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the notebook globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<notebook>_<run_id>_<to>/`, one directory per render — `render_sample` nests one per sample inside it |
 
 ### 1. create_spatialdata
 
@@ -384,9 +384,9 @@ those are different runs, since a render takes a samplesheet pointing at some ea
 published paths, and what a render was built from is in that samplesheet. The format is part
 of it because the two packagings of one notebook are different artifacts produced by separate
 runs, and sharing a name put the per-sample pages inside the cohort render's own directory;
-it is appended only when `--to` is given, so a render of every declared format has no suffix.
-A `render_sample` run nests one directory per sample inside that. `--run_id` names a render
-when it deserves a name of its own:
+it is always appended, one format per render -- `--to` defaults to `pptx`, so rendering both
+packagings means running twice. A `render_sample` run nests one directory per sample inside
+that. `--run_id` names a render when it deserves a name of its own:
 
 ```bash
 # One deck over the cohort.
@@ -450,7 +450,7 @@ assets/reference/  cell type centroids to annotate against; see each file's head
 data/raw/        raw instrument output (not committed)
 results/<run_id>/  published step output (not committed)
 reports/README.md  hand-written index of the renders worth keeping
-reports/<notebook>_<run_id>[_<to>]/  one directory per render: markdown and figures
+reports/<notebook>_<run_id>_<to>/    one directory per render: markdown and figures
                  committed, the deck not; render_sample nests one dir per sample
 ```
 

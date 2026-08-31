@@ -15,9 +15,8 @@ process QUARTO_RENDER {
     path "${stem}", emit: report
 
     script:
-    def to = format ? "--to ${format}" : ""
     """
-    quarto render ${notebook} ${to} --output-dir ${stem}
+    quarto render ${notebook} --to ${format} --output-dir ${stem}
     """
 
     stub:
@@ -36,8 +35,7 @@ workflow render {
     per_sample
 
     main:
-    def report_name = "${file(notebook).baseName}_${params.run_id}"
-    if (format) report_name = "${report_name}_${format}"
+    def report_name = "${file(notebook).baseName}_${params.run_id}_${format}"
 
     if (per_sample) {
         publish_dir = "${projectDir}/reports/${report_name}"
