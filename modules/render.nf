@@ -1,10 +1,10 @@
 process QUARTO_RENDER {
-    tag "${stem}"
+    tag "${output_dir}"
 
     publishDir { publish_dir }, mode: 'copy'
 
     input:
-    tuple val(stem), path(staged)
+    tuple val(output_dir), path(staged)
     val publish_dir
     val format
     path notebook
@@ -12,18 +12,18 @@ process QUARTO_RENDER {
     path filter
 
     output:
-    path "${stem}", emit: report
+    path "${output_dir}", emit: report
 
     script:
     """
-    quarto render ${notebook} --to ${format} --output-dir ${stem}
+    quarto render ${notebook} --to ${format} --output-dir ${output_dir}
     """
 
     stub:
     """
-    mkdir -p ${stem}/${notebook.baseName}_files
-    touch ${stem}/${notebook.baseName}.pptx
-    touch ${stem}/${notebook.baseName}.md
+    mkdir -p ${output_dir}/${notebook.baseName}_files
+    touch ${output_dir}/${notebook.baseName}.pptx
+    touch ${output_dir}/${notebook.baseName}.md
     """
 }
 
@@ -39,13 +39,13 @@ workflow render {
 
     if (per_sample) {
         publish_dir = "${projectDir}/reports/${report_name}"
-        rows.set { specs } // tuple(stem, staged_paths)
+        rows.set { specs } // tuple(output_dir, staged_paths)
     }
     else {
         publish_dir = "${projectDir}/reports"
         rows.toSortedList { a, b -> a[0] <=> b[0] }
             .map { sorted -> tuple(report_name, sorted.collectMany { it[1] }) }
-            .set { specs } // tuple(stem, staged_paths)
+            .set { specs } // tuple(output_dir, staged_paths)
     }
 
     QUARTO_RENDER(specs, publish_dir, format, notebook,
