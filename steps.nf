@@ -1,11 +1,6 @@
 #!/usr/bin/env nextflow
 
-// One step at a time, while the analysis is still being worked out:
-//
 //   nextflow run steps.nf -profile wsl --step <name> --samplesheet <path>
-//
-// Peer of main.nf, which replays a finished analysis as one run. Named steps.nf so
-// `nextflow run .` gives someone the analysis, not the tooling.
 //
 // Steps:
 //   create_spatialdata       samplesheet: sample, path   (path = MERSCOPE region directory)
@@ -22,11 +17,6 @@
 //                            one render over every row; --to picks one declared format
 //   render_sample            same samplesheet and --notebook; one render per row
 //                            --notebook names the report to render
-//
-// No chaining here. Every step writes the next one's samplesheet into params.outdir, so a
-// consuming step takes a path a run handed you rather than one you assembled, and any step can
-// be rerun on its own. Dispatch only: process and workflow live together in the module, and each
-// module workflow takes an input channel so main.nf can call the same ones.
 
 include { create_spatialdata      } from './modules/create_spatialdata'
 include { prep_cellpose_vpt       } from './modules/prep_cellpose_vpt'
@@ -46,7 +36,6 @@ workflow {
 
     if (!params.samplesheet)           error "Please provide --samplesheet"
     if (!(params.step in valid_steps)) error "Please provide a valid --step. Valid steps: ${valid_steps.join(', ')}"
-    // The render step has no notebook of its own -- that is the point of it.
     if (params.step.startsWith('render') && !params.notebook)
         error "Please provide --notebook: the .qmd to render, e.g. notebooks/celltype_report.qmd"
 
@@ -56,7 +45,5 @@ workflow {
     else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(samplePathPairs())
     else if (params.step == 'annotate_celltypes')      annotate_celltypes(samplePathPairs())
     else if (params.step == 'create_centroids')        create_centroids(samplePathWithSource())
-    // Both render steps are one workflow; it reads the mode off params.step. Rows rather than
-    // pairs: which columns a notebook wants to stage is the notebook's business.
     else                                               render(validateAndParseSampleSheet(['sample']))
 }

@@ -1,10 +1,6 @@
-// Convert one sample's cellpose re-segmentation to a SpatialData Zarr store.
 process CREATE_SPATIALDATA_CELLPOSE {
     tag "${sample}"
 
-    // publish_dir is an input rather than a helper call: the workflow builds it once and
-    // carries it back out, so the location this publishes to and the location the next step
-    // is told to read are the same string.
     publishDir { publish_dir }, mode: 'copy'
 
     input:
@@ -35,19 +31,14 @@ workflow create_spatialdata_cellpose {
     regionDirs
 
     main:
-    // The publish dir is built here and nowhere else.
     regionDirs.map { sample, region_dir, vpt_dir ->
             tuple(sample, "${params.outdir}/${sample}/create_spatialdata_cellpose",
                   region_dir, vpt_dir)
         }
-        .set { inputs }
+        .set { inputs } // tuple(sample, publish_dir, region_dir, vpt_dir)
 
     CREATE_SPATIALDATA_CELLPOSE(inputs, file("${projectDir}/bin/timer.py"))
 
-    // Handoff samplesheet of the per-sample zarrs, built from the channel. The published name
-    // comes off the output itself, so it cannot drift from what was actually written — which
-    // it previously had, the printf still naming <sample>.zarr after the artifacts were
-    // renamed to <sample>.<step>.zarr.
     CREATE_SPATIALDATA_CELLPOSE.out.artifacts
         .map { sample, publish_dir, zarr -> "${sample},${publish_dir}/${zarr.name}" }
         .collectFile(name: 'create_spatialdata_cellpose_samplesheet.csv', storeDir: params.outdir,
