@@ -46,11 +46,12 @@ process QUARTO_RENDER {
 workflow render {
     take:
     rows
+    notebook
+    format
+    per_sample
 
     main:
-    def per_sample = params.step == 'render_sample'
-
-    def inputs = renderSpecs(rows, file(params.notebook), params.to, per_sample)
+    def inputs = renderSpecs(rows, notebook, format, per_sample)
     // tuple(publish_dir, stem, format, notebook, staged_paths)
 
     QUARTO_RENDER(inputs,

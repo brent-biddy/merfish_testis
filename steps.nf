@@ -45,5 +45,6 @@ workflow {
     else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(samplePathPairs())
     else if (params.step == 'annotate_celltypes')      annotate_celltypes(samplePathPairs())
     else if (params.step == 'create_centroids')        create_centroids(samplePathWithSource())
-    else                                               render(sampleWithPaths())
+    else                                               render(sampleWithPaths(), file(params.notebook),
+                                                              params.to, params.step == 'render_sample')
 }

@@ -4,7 +4,7 @@ include { create_spatialdata      } from './modules/create_spatialdata'
 include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
-include { QUARTO_RENDER; renderSpecs } from './modules/render'
+include { render                  } from './modules/render'
 include { samplePathPairs         } from './modules/samplesheet'
 
 workflow {
@@ -35,14 +35,5 @@ workflow {
         }
         .set { report_rows } // tuple(sample, staged_paths)
 
-    def report_inputs = renderSpecs(report_rows,
-                                    file("${projectDir}/notebooks/celltype_report.qmd"),
-                                    params.to, false)
-    // tuple(publish_dir, stem, format, notebook, staged_paths), one element: the cohort render
-
-    QUARTO_RENDER(
-        report_inputs,
-        file("${projectDir}/assets/ouhsc_ppt_template.pptx"),
-        file("${projectDir}/assets/fold-code.lua"),
-    )
+    render(report_rows, file("${projectDir}/notebooks/celltype_report.qmd"), params.to, false)
 }
