@@ -1,8 +1,3 @@
-def reportDir(notebook, format) {
-    def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
-    format ? "${base}_${format}" : base
-}
-
 def pathsOf(Map row) {
     row.findAll { column, value -> column != 'sample' }
        .values()
@@ -10,10 +5,12 @@ def pathsOf(Map row) {
 }
 
 def renderSpecs(rows, notebook, format, per_sample) {
+    def base = params.report_id ?: "${file(notebook).baseName}_${params.run_id}"
+    def report_dir = format ? "${base}_${format}" : base
+
     if (per_sample) {
         return rows.map { row ->
-            def publish_dir = "${projectDir}/reports/${reportDir(notebook, format)}"
-            tuple(publish_dir, row.sample, format, notebook, pathsOf(row))
+            tuple("${projectDir}/reports/${report_dir}", row.sample, format, notebook, pathsOf(row))
         }
     }
 
@@ -21,7 +18,7 @@ def renderSpecs(rows, notebook, format, per_sample) {
         .toSortedList { a, b -> a.sample <=> b.sample }
         .map { sorted -> sorted.collectMany { row -> pathsOf(row) } }
         .map { paths ->
-            tuple("${projectDir}/reports", reportDir(notebook, format), format, notebook, paths)
+            tuple("${projectDir}/reports", report_dir, format, notebook, paths)
         }
 }
 
