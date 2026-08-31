@@ -35,6 +35,7 @@ workflow render {
     val_per_sample
 
     main:
+    // <qmd basename>_<run_id>_<format>, e.g. celltype_report_20260831_143022_pptx
     def report_name = "${file(val_qmd_file).baseName}_${params.run_id}_${val_quarto_format}"
 
     if (val_per_sample) {   // true: one render per sample, nested under the report dir
