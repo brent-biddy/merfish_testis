@@ -2,8 +2,9 @@ def isSamplesheet(input) {
     input instanceof java.nio.file.Path || input instanceof String
 }
 
-// sample first, then one file per remaining column, in the order given. Without a column
-// list, every column a notebook's samplesheet happens to name, which render cannot know.
+// With a column list, sample first then one file per remaining column, in the order given.
+// Without one, sample and every path its row named, which is what a notebook needs: it
+// declares what it wants by globbing, so render cannot name the columns.
 def samplesFrom(input, List columns = null) {
     if (!isSamplesheet(input)) return input
     channel.fromPath(input)
@@ -11,6 +12,7 @@ def samplesFrom(input, List columns = null) {
         .map { row ->
             def cols = columns ?: ['sample'] + (row.keySet() - 'sample').toList()
             cols.each { c -> if (!row[c]) error "Samplesheet row missing '${c}': ${row}" }
-            [row.sample] + cols.tail().collect { file(row[it]) }
+            def paths = cols.tail().collect { file(row[it]) }
+            columns ? [row.sample] + paths : tuple(row.sample, paths)
         }
 }
