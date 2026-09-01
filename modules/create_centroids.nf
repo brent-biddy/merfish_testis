@@ -1,14 +1,5 @@
 include { samplesFrom } from './samplesheet'
 
-
-// Where the producing step published the zarr this run read. Chained, the staged path is a
-// work dir the run deletes; every module publishes to ${params.outdir}/<sample>/<step>, and
-// <step> is the middle field of the <sample>.<step>.<ext> artifact name.
-def publishedSource(sample, zarr) {
-    def step = zarr.name.substring("${sample}".length() + 1, zarr.name.lastIndexOf('.'))
-    "${params.outdir}/${sample}/${step}/${zarr.name}"
-}
-
 def centroidStem(sample) {
     params.group_by ? "${sample}.${params.group_by}.centroids" : "${sample}.centroids"
 }
@@ -48,10 +39,15 @@ workflow create_centroids {
     main:
     def ch_zarrs = samplesFrom(input, ['sample', 'path'])
 
-    // A samplesheet's path column is already the published location; a chained run's is not.
+    // A samplesheet's path column is already the published location. A chained run's is the
+    // work dir the run deletes, so rebuild it: modules publish to ${params.outdir}/<sample>/<step>,
+    // and <step> is the middle field of <sample>.<step>.<ext>.
     def ch_sources = input instanceof Path || input instanceof String
         ? ch_zarrs.map { sample, zarr -> tuple(sample, zarr.toString()) }
-        : ch_zarrs.map { sample, zarr -> tuple(sample, publishedSource(sample, zarr)) }
+        : ch_zarrs.map { sample, zarr ->
+            def step = zarr.name.substring("${sample}".length() + 1, zarr.name.lastIndexOf('.'))
+            tuple(sample, "${params.outdir}/${sample}/${step}/${zarr.name}")
+        }
 
     CREATE_CENTROIDS(ch_zarrs, file("${projectDir}/bin/timer.py"))
 
