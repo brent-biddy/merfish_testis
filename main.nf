@@ -19,12 +19,8 @@ workflow {
     create_centroids(ch_centroid_inputs)
 
     create_centroids.out.centroids
-        .join(annotate_celltypes.out.zarr, remainder: true)
-        .map { sample, centroids, zarr ->
-            if (!centroids) error "Sample '${sample}' has no centroids: create_centroids did not produce one."
-            if (!zarr)      error "Sample '${sample}' has no annotated zarr: annotate_celltypes did not produce one."
-            tuple(sample, [centroids, zarr])
-        }
+        .join(annotate_celltypes.out.zarr)
+        .map { sample, centroids, zarr -> tuple(sample, [centroids, zarr]) }
         .set { ch_report_samples } // tuple(sample, staged_paths)
 
     render(ch_report_samples, file("${projectDir}/notebooks/celltype_report.qmd"), params.to, false)
