@@ -4,7 +4,7 @@
 def samplesFrom(input, List columns = null) {
     // steps.nf passes a samplesheet
     if (input instanceof Path || input instanceof String) {
-        return channel.fromPath(input)
+        def ch_samples = channel.fromPath(input)
             .splitCsv(header: true)
             .map { row ->
                 def cols = columns ?: ['sample'] + (row.keySet() - 'sample').toList()
@@ -12,6 +12,8 @@ def samplesFrom(input, List columns = null) {
                 def paths = cols.tail().collect { file(row[it]) }
                 columns ? [row.sample] + paths : tuple(row.sample, paths)
             }
+
+        return ch_samples
     }
     // main.nf passes a channel already carrying one tuple per sample
     else {
