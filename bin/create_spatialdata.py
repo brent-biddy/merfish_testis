@@ -61,9 +61,10 @@ def convert_hdf5_boundaries(boundaries_dir, output_path):
                 if plane is None:
                     continue
 
-                # A cell segmented into several pieces on this plane has p_0, p_1, ... and
-                # a cell absent from it has none. Fewer than three vertices is not a ring;
-                # shapely raises on those rather than returning something invalid.
+                # A cell segmented into several pieces on this plane has p_0, p_1, ..., so
+                # parts become one MultiPolygon. Skipped when every part is degenerate or
+                # the plane group is empty -- fewer than three vertices is not a ring and
+                # shapely raises on those.
                 parts = []
                 for part in plane.values():
                     coordinates = part["coordinates"][0]
