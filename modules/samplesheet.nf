@@ -10,9 +10,18 @@ def validateAndParseSampleSheet(List required) {
         }
 }
 
-def samplePathPairs() {
-    validateAndParseSampleSheet(['sample', 'path'])
-        .map { row -> tuple(row.sample, file(row.path)) }
+// sample first, then one file per remaining column, in the order given.
+def sampleFiles(List columns) {
+    validateAndParseSampleSheet(columns)
+        .map { row -> [row.sample] + columns.tail().collect { file(row[it]) } }
+}
+
+def samplePathPairs()      { sampleFiles(['sample', 'path']) }
+def sampleRegionCellpose() { sampleFiles(['sample', 'path', 'cellpose_path']) }
+def sampleRegionVpt()      { sampleFiles(['sample', 'path', 'vpt_path']) }
+
+def samplePathWithSource() {
+    sampleFiles(['sample', 'path']).map { sample, path -> [sample, path, path.toString()] }
 }
 
 def sampleWithPaths() {
@@ -21,19 +30,4 @@ def sampleWithPaths() {
             def sample = row.remove('sample')
             tuple(sample, row.values().collect { file(it) })
         }
-}
-
-def samplePathWithSource() {
-    validateAndParseSampleSheet(['sample', 'path'])
-        .map { row -> tuple(row.sample, file(row.path), row.path) }
-}
-
-def sampleRegionCellpose() {
-    validateAndParseSampleSheet(['sample', 'path', 'cellpose_path'])
-        .map { row -> tuple(row.sample, row.path, file(row.cellpose_path)) }
-}
-
-def sampleRegionVpt() {
-    validateAndParseSampleSheet(['sample', 'path', 'vpt_path'])
-        .map { row -> tuple(row.sample, file(row.path), file(row.vpt_path)) }
 }
