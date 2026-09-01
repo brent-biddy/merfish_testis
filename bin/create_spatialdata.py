@@ -32,13 +32,14 @@ from spatialdata_io import merscope
 
 from timer import timer, timing_summary
 
-# The function default, pinned here and recorded into the table below so downstream
-# steps read which plane was loaded instead of assuming it.
+# merscope()'s z_layers argument, pinned at its current default so a library change cannot
+# move the plane silently. Picks which per-stain mosaic TIFF set is read into the image
+# element <slide>_<region>_z<n>; the table below records it.
 Z_LAYER = 3
 
-# The plane the HDF5 conversion below writes. merscope() keeps only ZIndex 0 out of
-# whatever the boundary file holds, so converting the other planes would write several
-# times the polygons for values no reader ever sees.
+# The plane the HDF5 conversion reads, and the ZIndex it stamps on the parquet. Not a
+# merscope() argument: its reader keeps only ZIndex 0 -- undocumented, in _get_polygons --
+# so any other value converts cleanly, loses every polygon, and dies in pandas.
 BOUNDARY_Z_INDEX = 0
 
 
