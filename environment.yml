@@ -1,13 +1,6 @@
-# A local env for developing the scripts and notebooks in this repo.
-#
-# Versions match python_cpu 1.0.0 (the image the pipeline runs in) rather than being solved
-# fresh, so what you debug locally is what the pipeline executes. Newer is not the goal: an
-# earlier attempt at that image took the newest solve and died reading a MERSCOPE directory,
-# because anndata 0.13 dropped a `dtype` argument spatialdata-io still passes.
-#
-# The GPU steps are not here. cupy and rapids-singlecell come from python_gpu, which is built
-# on this same set -- clustering runs in that image, so `label 'gpu'` in conf/defaults.config
-# is what selects it rather than anything in this file.
+# A local env for developing this repo's scripts and notebooks. Versions match python_cpu
+# 1.0.0, the image the pipeline runs in -- do not re-solve. The GPU steps are not here; cupy
+# and rapids-singlecell come from python_gpu.
 name: merfish_testis
 
 channels:
