@@ -24,6 +24,8 @@ include { sampleWithPaths; samplePathPairs; samplePathWithSource;
           sampleRegionCellpose; sampleRegionVpt } from './modules/samplesheet'
 
 workflow {
+    def notebook = params.notebook ? file(params.notebook) : null
+
     def valid_steps = ['create_spatialdata', 'prep_cellpose_vpt',
                        'create_spatialdata_cellpose',
                        'cluster_spatialdata_gpu', 'annotate_celltypes',
@@ -33,8 +35,6 @@ workflow {
     if (!(params.step in valid_steps)) error "Please provide a valid --step. Valid steps: ${valid_steps.join(', ')}"
     if (params.step.startsWith('render') && !params.notebook)
         error "Please provide --notebook: the .qmd to render, e.g. notebooks/celltype_report.qmd"
-
-    def notebook = params.notebook ? file(params.notebook) : null
 
     if      (params.step == 'create_spatialdata')      create_spatialdata(samplePathPairs())
     else if (params.step == 'prep_cellpose_vpt')       prep_cellpose_vpt(sampleRegionCellpose())
