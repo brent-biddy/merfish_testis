@@ -1,3 +1,5 @@
+include { samplesFrom; isSamplesheet } from './samplesheet'
+
 
 def centroidStem(sample) {
     params.group_by ? "${sample}.${params.group_by}.centroids" : "${sample}.centroids"
@@ -32,10 +34,16 @@ process CREATE_CENTROIDS {
 
 workflow create_centroids {
     take:
-    // tuple(sample, zarr, the zarr's published location). The third element is what the
-    ch_zarrs
+    // a samplesheet, or tuple(sample, zarr, the zarr's published location) per sample. The
+    // third element records where the zarr this run read is published: from a samplesheet it
+    // is the path column itself, and main.nf builds it from the producing step's publish dir.
+    input
 
     main:
+    def ch_zarrs = isSamplesheet(input)
+        ? samplesFrom(input, ['sample', 'path']).map { sample, zarr -> [sample, zarr, zarr.toString()] }
+        : input
+
     ch_zarrs.map { sample, zarr, input_dir ->
             tuple(sample, "${params.outdir}/${sample}/create_centroids", zarr, input_dir)
         }

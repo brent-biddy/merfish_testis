@@ -1,3 +1,5 @@
+include { samplesWithAnyPaths } from './samplesheet'
+
 process QUARTO_RENDER {
     tag "${output_dir}"
 
@@ -29,12 +31,15 @@ process QUARTO_RENDER {
 
 workflow render {
     take:
-    ch_samples
+    // a samplesheet, or tuple(sample, staged paths) per sample
+    input
     val_qmd_file
     val_quarto_format
     val_per_sample
 
     main:
+    def ch_samples = samplesWithAnyPaths(input)
+
     // <qmd basename>_<run_id>_<format>, e.g. celltype_report_20260831_143022_pptx
     def report_name = "${file(val_qmd_file).baseName}_${params.run_id}_${val_quarto_format}"
 

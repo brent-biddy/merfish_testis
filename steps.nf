@@ -20,11 +20,10 @@ include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
 include { render                  } from './modules/render'
-include { sampleWithPaths; samplePathPairs; samplePathWithSource;
-          sampleRegionCellpose; sampleRegionVpt } from './modules/samplesheet'
 
 workflow {
     def notebook = params.notebook ? file(params.notebook) : null
+    def sheet    = file(params.samplesheet)
 
     def valid_steps = ['create_spatialdata', 'prep_cellpose_vpt',
                        'create_spatialdata_cellpose',
@@ -36,12 +35,12 @@ workflow {
     if (params.step.startsWith('render') && !params.notebook)
         error "Please provide --notebook: the .qmd to render, e.g. notebooks/celltype_report.qmd"
 
-    if      (params.step == 'create_spatialdata')      create_spatialdata(samplePathPairs())
-    else if (params.step == 'prep_cellpose_vpt')       prep_cellpose_vpt(sampleRegionCellpose())
-    else if (params.step == 'create_spatialdata_cellpose') create_spatialdata_cellpose(sampleRegionVpt())
-    else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(samplePathPairs())
-    else if (params.step == 'annotate_celltypes')      annotate_celltypes(samplePathPairs())
-    else if (params.step == 'create_centroids')        create_centroids(samplePathWithSource())
-    else if (params.step == 'render_cohort')           render(sampleWithPaths(), notebook, params.to, false)
-    else if (params.step == 'render_sample')           render(sampleWithPaths(), notebook, params.to, true)
+    if      (params.step == 'create_spatialdata')      create_spatialdata(sheet)
+    else if (params.step == 'prep_cellpose_vpt')       prep_cellpose_vpt(sheet)
+    else if (params.step == 'create_spatialdata_cellpose') create_spatialdata_cellpose(sheet)
+    else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(sheet)
+    else if (params.step == 'annotate_celltypes')      annotate_celltypes(sheet)
+    else if (params.step == 'create_centroids')        create_centroids(sheet)
+    else if (params.step == 'render_cohort')           render(sheet, notebook, params.to, false)
+    else if (params.step == 'render_sample')           render(sheet, notebook, params.to, true)
 }

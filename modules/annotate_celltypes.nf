@@ -1,3 +1,5 @@
+include { samplesFrom } from './samplesheet'
+
 process ANNOTATE_CELLTYPES {
     tag "${sample}"
 
@@ -28,10 +30,12 @@ process ANNOTATE_CELLTYPES {
 
 workflow annotate_celltypes {
     take:
-    // tuple(sample, input path). Both entry points hand over the same shape: main.nf from a
-    ch_zarrs
+    // a samplesheet, or tuple(sample, zarr) per sample
+    input
 
     main:
+    def ch_zarrs = samplesFrom(input, ['sample', 'path'])
+
     ch_zarrs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/annotate_celltypes", input_path)
         }

@@ -1,3 +1,5 @@
+include { samplesFrom } from './samplesheet'
+
 process CREATE_SPATIALDATA {
     tag "${sample}"
 
@@ -25,10 +27,12 @@ process CREATE_SPATIALDATA {
 
 workflow create_spatialdata {
     take:
-    // tuple(sample, input path). Both entry points hand over the same shape: main.nf from a
-    ch_region_dirs
+    // a samplesheet, or tuple(sample, region dir) per sample
+    input
 
     main:
+    def ch_region_dirs = samplesFrom(input, ['sample', 'path'])
+
     ch_region_dirs.map { sample, input_path ->
             tuple(sample, "${params.outdir}/${sample}/create_spatialdata", input_path)
         }

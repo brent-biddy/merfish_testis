@@ -1,3 +1,5 @@
+include { samplesFrom } from './samplesheet'
+
 process PREP_CELLPOSE_VPT {
     tag "${sample}"
 
@@ -27,10 +29,12 @@ process PREP_CELLPOSE_VPT {
 
 workflow prep_cellpose_vpt {
     take:
-    // tuple(sample, region path, cellpose dir). The region path travels as a value as well
-    ch_segmentations
+    // a samplesheet, or tuple(sample, region dir, cellpose dir) per sample
+    input
 
     main:
+    def ch_segmentations = samplesFrom(input, ['sample', 'path', 'cellpose_path'])
+
     ch_segmentations.map { sample, region_path, cellpose_dir ->
             tuple(sample, "${params.outdir}/${sample}/prep_cellpose_vpt",
                   region_path, file(region_path), cellpose_dir)

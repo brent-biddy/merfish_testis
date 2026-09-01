@@ -1,3 +1,5 @@
+include { samplesFrom } from './samplesheet'
+
 process CREATE_SPATIALDATA_CELLPOSE {
     tag "${sample}"
 
@@ -27,10 +29,12 @@ process CREATE_SPATIALDATA_CELLPOSE {
 
 workflow create_spatialdata_cellpose {
     take:
-    // tuple(sample, region dir, vpt dir)
-    ch_region_dirs
+    // a samplesheet, or tuple(sample, region dir, vpt dir) per sample
+    input
 
     main:
+    def ch_region_dirs = samplesFrom(input, ['sample', 'path', 'vpt_path'])
+
     ch_region_dirs.map { sample, region_dir, vpt_dir ->
             tuple(sample, "${params.outdir}/${sample}/create_spatialdata_cellpose",
                   region_dir, vpt_dir)

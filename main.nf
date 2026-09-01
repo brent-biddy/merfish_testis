@@ -5,10 +5,9 @@ include { cluster_spatialdata_gpu } from './modules/cluster_spatialdata_gpu'
 include { annotate_celltypes      } from './modules/annotate_celltypes'
 include { create_centroids        } from './modules/create_centroids'
 include { render                  } from './modules/render'
-include { samplePathPairs         } from './modules/samplesheet'
 
 workflow {
-    create_spatialdata(samplePathPairs())
+    create_spatialdata(file(params.samplesheet))
     cluster_spatialdata_gpu(create_spatialdata.out.zarr)
     annotate_celltypes(cluster_spatialdata_gpu.out.zarr)
 
