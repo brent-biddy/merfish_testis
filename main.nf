@@ -8,15 +8,11 @@ include { render                  } from './modules/render'
 include { samplePathPairs         } from './modules/samplesheet'
 
 workflow {
+    def sample_zarr = { sample, publish_dir, zarr -> tuple(sample, zarr) }
+
     create_spatialdata(samplePathPairs())
-
-    cluster_spatialdata_gpu(
-        create_spatialdata.out.artifacts.map { sample, publish_dir, zarr -> tuple(sample, zarr) }
-    )
-
-    annotate_celltypes(
-        cluster_spatialdata_gpu.out.artifacts.map { sample, publish_dir, zarr -> tuple(sample, zarr) }
-    )
+    cluster_spatialdata_gpu(create_spatialdata.out.artifacts.map(sample_zarr))
+    annotate_celltypes(cluster_spatialdata_gpu.out.artifacts.map(sample_zarr))
 
     create_centroids(
         annotate_celltypes.out.artifacts.map { sample, publish_dir, zarr ->
@@ -26,8 +22,7 @@ workflow {
 
     create_centroids.out.artifacts
         .map { sample, publish_dir, centroids, input_dir -> tuple(sample, centroids) }
-        .join(annotate_celltypes.out.artifacts.map { sample, publish_dir, zarr -> tuple(sample, zarr) },
-              remainder: true)
+        .join(annotate_celltypes.out.artifacts.map(sample_zarr), remainder: true)
         .map { sample, centroids, zarr ->
             if (!centroids) error "Sample '${sample}' has no centroids: create_centroids did not produce one."
             if (!zarr)      error "Sample '${sample}' has no annotated zarr: annotate_celltypes did not produce one."
