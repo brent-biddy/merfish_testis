@@ -111,9 +111,9 @@ def main():
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # A --group_by run publishes beside a sweep run, so the column goes in the name. It
-    # qualifies the stem rather than extending it, so `.centroids` stays the last token
-    # before the extension and one glob takes both.
+    # A --group_by run publishes beside a sweep run, so the column goes in the
+    # name: <sample>.<column>.centroids, not <sample>.centroids.<column>, so one
+    # glob takes both.
     stem = f"{args.sample}.{args.group_by}.centroids" if args.group_by else f"{args.sample}.centroids"
     output_path = outdir / f"{stem}.h5ad"
 
