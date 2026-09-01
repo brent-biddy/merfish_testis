@@ -1,4 +1,4 @@
-include { samplesWithAnyPaths } from './samplesheet'
+include { samplesFrom; isSamplesheet } from './samplesheet'
 
 process QUARTO_RENDER {
     tag "${output_dir}"
@@ -38,7 +38,11 @@ workflow render {
     val_per_sample
 
     main:
-    def ch_samples = samplesWithAnyPaths(input)
+    // Every path a row named, since a notebook declares what it needs by globbing rather than
+    // by column. main.nf already groups its paths, so only a samplesheet needs collecting.
+    def ch_samples = isSamplesheet(input)
+        ? samplesFrom(input).map { row -> tuple(row[0], row.tail()) }
+        : input
 
     // <qmd basename>_<run_id>_<format>, e.g. celltype_report_20260831_143022_pptx
     def report_name = "${file(val_qmd_file).baseName}_${params.run_id}_${val_quarto_format}"
