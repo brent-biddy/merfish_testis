@@ -46,10 +46,7 @@ BOUNDARY_Z_INDEX = 0
 def convert_hdf5_boundaries(boundaries_dir, output_path):
     """Write per-FOV HDF5 cell boundaries as the single parquet merscope() reads.
 
-    Pre-VPT MERSCOPE runs write cell_boundaries/feature_data_<fov>.hdf5 rather than a
-    cell_boundaries.parquet. merscope() looks only for the parquet: when it is absent it
-    warns, loads no polygons at all, and still names the polygons element as the table's
-    region — a store that reads fine until something asks for the boundaries.
+    Pre-VPT MERSCOPE runs write cell_boundaries/feature_data_<fov>.hdf5 instead.
     """
     entity_ids = []
     geometries = []
