@@ -156,8 +156,8 @@ def main():
         centroids = ad.concat(centroid_list, axis=0, join="outer")
         centroids.obs["sample"] = args.sample
 
-        # Pinned, because anndata converts string columns to categorical only when the
-        # cardinality pays off, so the dtype would otherwise vary between stores.
+        # anndata leaves a string column as object only when every value is unique, so
+        # `group` varies: categorical from a sweep, object from a --group_by run.
         for column in ("grouping", "group", "sample"):
             centroids.obs[column] = pd.Categorical(centroids.obs[column].astype(str))
 
