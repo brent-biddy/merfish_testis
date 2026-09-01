@@ -164,7 +164,7 @@ def main():
         for column in ("grouping", "group", "sample"):
             centroids.obs[column] = pd.Categorical(centroids.obs[column].astype(str))
 
-    print(f"Wrote {centroids.n_obs:,} group rows x {centroids.n_vars:,} genes.")
+    print(f"Assembled {centroids.n_obs:,} group rows x {centroids.n_vars:,} genes.")
 
     with timer("Write h5ad"):
         centroids.write_h5ad(output_path)
