@@ -78,8 +78,9 @@ def convert_hdf5_boundaries(boundaries_dir, output_path):
                 # on every row, and a bare Polygon has no .geoms.
                 geometries.append(MultiPolygon(parts))
 
-    # EntityID as string, not the int64 a VPT parquet uses: these ids run to 39 digits.
-    # merscope() takes the index from str(EntityID), so both formats land the same.
+    # The HDF5 group names are already strings, so they are left alone rather than cast to
+    # the int64 a VPT parquet holds: merscope() indexes on str(EntityID), so both land the
+    # same.
     boundaries = gpd.GeoDataFrame(
         {"EntityID": entity_ids, "ZIndex": BOUNDARY_Z_INDEX, "Geometry": geometries},
         geometry="Geometry",
