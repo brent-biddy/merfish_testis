@@ -1,4 +1,4 @@
-include { samplesFrom; isSamplesheet } from './samplesheet'
+include { samplesFrom } from './samplesheet'
 
 
 // Where the producing step published the zarr this run read. Chained, the staged path is a
@@ -49,7 +49,7 @@ workflow create_centroids {
     def ch_zarrs = samplesFrom(input, ['sample', 'path'])
 
     // A samplesheet's path column is already the published location; a chained run's is not.
-    def ch_sources = isSamplesheet(input)
+    def ch_sources = input instanceof Path || input instanceof String
         ? ch_zarrs.map { sample, zarr -> tuple(sample, zarr.toString()) }
         : ch_zarrs.map { sample, zarr -> tuple(sample, publishedSource(sample, zarr)) }
 
