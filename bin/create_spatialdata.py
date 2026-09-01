@@ -96,7 +96,7 @@ def staged_region_dir(region_dir, staging_dir):
     instead of the parquet merscope() reads. Returns the input unchanged when neither
     applies.
     """
-    # Only the ids are needed, and cell_by_gene.csv is hundreds of MB of counts.
+    # Only the ids are needed; usecols keeps the whole counts matrix out of memory.
     counts_index = pd.read_csv(
         region_dir / "cell_by_gene.csv", index_col=0, usecols=[0], dtype=str
     ).index
