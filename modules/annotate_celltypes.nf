@@ -49,4 +49,6 @@ workflow annotate_celltypes {
 
     emit:
     artifacts = ANNOTATE_CELLTYPES.out.artifacts
+    zarr      = ANNOTATE_CELLTYPES.out.artifacts
+        .map { sample, publish_dir, zarr -> tuple(sample, zarr) }
 }

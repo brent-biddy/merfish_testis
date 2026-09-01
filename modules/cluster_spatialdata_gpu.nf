@@ -45,4 +45,6 @@ workflow cluster_spatialdata_gpu {
 
     emit:
     artifacts = CLUSTER_SPATIALDATA_GPU.out.artifacts
+    zarr      = CLUSTER_SPATIALDATA_GPU.out.artifacts
+        .map { sample, publish_dir, zarr -> tuple(sample, zarr) }
 }

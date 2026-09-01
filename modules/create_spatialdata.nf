@@ -43,4 +43,6 @@ workflow create_spatialdata {
 
     emit:
     artifacts = CREATE_SPATIALDATA.out.artifacts
+    zarr      = CREATE_SPATIALDATA.out.artifacts
+        .map { sample, publish_dir, zarr -> tuple(sample, zarr) }
 }

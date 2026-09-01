@@ -54,4 +54,6 @@ workflow create_centroids {
 
     emit:
     artifacts = CREATE_CENTROIDS.out.artifacts
+    centroids = CREATE_CENTROIDS.out.artifacts
+        .map { sample, publish_dir, centroids, input_dir -> tuple(sample, centroids) }
 }
