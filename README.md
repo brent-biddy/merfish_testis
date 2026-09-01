@@ -103,8 +103,9 @@ filename prefixes.
 ### 1. create_spatialdata
 
 Reads a raw MERSCOPE output directory and writes it as a SpatialData Zarr store. The
-sample id is written into `table.obs["sample"]` and the loaded z-plane into
-`table.uns["z_layer"]`, so downstream steps read both from the object.
+sample id is written into `table.obs["sample"]`, which later steps read instead of
+parsing a staged filename, and the loaded z-plane into `table.uns["z_layer"]` as
+provenance — nothing reads that one yet.
 
 The store holds the mosaic image as a multiscale pyramid, the transcripts as 3D points,
 the cell boundaries as polygons, and the count matrix as the table.
