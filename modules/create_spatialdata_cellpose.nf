@@ -32,8 +32,9 @@ workflow create_spatialdata_cellpose {
     input
 
     main:
-    CREATE_SPATIALDATA_CELLPOSE(samplesFrom(input, ['sample', 'path', 'vpt_path']),
-                                file("${projectDir}/bin/timer.py"))
+    def ch_region_dirs = samplesFrom(input, ['sample', 'path', 'vpt_path'])
+
+    CREATE_SPATIALDATA_CELLPOSE(ch_region_dirs, file("${projectDir}/bin/timer.py"))
 
     CREATE_SPATIALDATA_CELLPOSE.out.zarr
         .map { sample, zarr ->

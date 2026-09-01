@@ -37,8 +37,9 @@ workflow annotate_celltypes {
     def reference = file(params.reference
         ?: "${projectDir}/assets/reference/shami_human_testis_centroids.csv.gz")
 
-    ANNOTATE_CELLTYPES(samplesFrom(input, ['sample', 'path']), reference,
-                       file("${projectDir}/bin/timer.py"))
+    def ch_zarrs = samplesFrom(input, ['sample', 'path'])
+
+    ANNOTATE_CELLTYPES(ch_zarrs, reference, file("${projectDir}/bin/timer.py"))
 
     ANNOTATE_CELLTYPES.out.zarr
         .map { sample, zarr ->

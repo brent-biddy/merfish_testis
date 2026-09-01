@@ -31,7 +31,9 @@ workflow create_spatialdata {
     input
 
     main:
-    CREATE_SPATIALDATA(samplesFrom(input, ['sample', 'path']), file("${projectDir}/bin/timer.py"))
+    def ch_region_dirs = samplesFrom(input, ['sample', 'path'])
+
+    CREATE_SPATIALDATA(ch_region_dirs, file("${projectDir}/bin/timer.py"))
 
     CREATE_SPATIALDATA.out.zarr
         .map { sample, zarr -> "${sample},${params.outdir}/${sample}/create_spatialdata/${zarr.name}" }

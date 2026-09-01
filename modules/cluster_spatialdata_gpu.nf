@@ -33,7 +33,9 @@ workflow cluster_spatialdata_gpu {
     input
 
     main:
-    CLUSTER_SPATIALDATA_GPU(samplesFrom(input, ['sample', 'path']), file("${projectDir}/bin/timer.py"))
+    def ch_zarrs = samplesFrom(input, ['sample', 'path'])
+
+    CLUSTER_SPATIALDATA_GPU(ch_zarrs, file("${projectDir}/bin/timer.py"))
 
     CLUSTER_SPATIALDATA_GPU.out.zarr
         .map { sample, zarr ->
