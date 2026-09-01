@@ -180,13 +180,12 @@ def main():
     print(f"Z-layer: {Z_LAYER}")
 
     raw_region_dir = Path(args.path)
-    region_dir = staged_region_dir(raw_region_dir, outdir / "staged_region")
+    region_dir = staged_region_dir(raw_region_dir, outdir / "staged" / raw_region_dir.name)
 
     # Elements are named <slide>_<region>_<element>. Both halves are passed rather than
-    # defaulted: the slide would otherwise be the run directory's name, and the region the
-    # name of whatever directory was read — which is the staging directory for a sample
-    # that needed one. Naming the raw region keeps a staged sample's elements identical to
-    # what the same data would produce read directly.
+    # defaulted: merscope() takes the slide from the parent directory's name and the region
+    # from the directory it read, so defaulting would let the names follow wherever the
+    # files sit. Passing them keeps a staged sample's elements identical to a direct read.
     with timer("Read MERSCOPE"):
         sdata = merscope(
             path=region_dir,
