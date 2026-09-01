@@ -8,10 +8,9 @@ instead of one per cell:
     X                 each cell's CP10K profile, summed over the group
     layers["counts"]  raw counts, summed over the group
 
-Stored as sums rather than means because sums are additive: the profile of any union of
-clusters is the row-wise sum of its members, and n_cells sums with it. The reference
-centroids in assets/reference are ln(mean + 1), so the comparable value built from this
-store is log1p(X / n_cells).
+Stored as sums, not means, so clusters pool: any union's profile is the row-wise sum of
+its members, and n_cells sums with it. The reference centroids in assets/reference are
+ln(mean + 1), so the comparable value here is log1p(X / n_cells).
 
 Groups by every _v1 column by default, or by one named obs column with --group_by.
 Requires layers["counts"], which cluster_spatialdata_gpu.py writes.
