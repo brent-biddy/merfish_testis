@@ -10,8 +10,9 @@ process QUARTO_RENDER {
     val publish_dir
     val format
     path notebook
-    path pptx_template_file
-    path gfm_code_fold_filter
+    // Named, not bound: the notebook's YAML asks for these by filename.
+    path 'ouhsc_ppt_template.pptx'
+    path 'fold-code.lua'
 
     output:
     path "${output_dir}", emit: report
