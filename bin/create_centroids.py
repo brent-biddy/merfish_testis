@@ -153,9 +153,9 @@ def main():
             centroid_list.append(get_centroids(adata, column))
 
     with timer("Assemble"):
-        # index_unique=None keeps the group labels unsuffixed; obs identifies a row by
-        # (grouping, group). anndata still wants unique names, hence the renumbering.
-        centroids = ad.concat(centroid_list, axis=0, join="outer", index_unique=None)
+        # obs identifies a row by (grouping, group), both captured in get_centroids;
+        # index_unique only spares concat a duplicate-name warning before the renumbering.
+        centroids = ad.concat(centroid_list, axis=0, join="outer", index_unique="-")
         centroids.obs_names = [str(row) for row in range(centroids.n_obs)]
         centroids.obs["sample"] = args.sample
 
