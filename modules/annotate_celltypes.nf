@@ -3,15 +3,15 @@ include { samplesFrom } from './samplesheet'
 process ANNOTATE_CELLTYPES {
     tag "${sample}"
 
-    publishDir { publish_dir }, mode: 'copy'
+    publishDir { "${params.outdir}/${sample}/annotate_celltypes" }, mode: 'copy'
 
     input:
-    tuple val(sample), val(publish_dir), path(zarr)
+    tuple val(sample), path(zarr)
     path reference
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir), path("${sample}.annotate_celltypes.zarr"), emit: artifacts
+    tuple val(sample), path("${sample}.annotate_celltypes.zarr"), emit: zarr
     path "${sample}.gene_overlap.tsv", emit: gene_overlap
     path "${sample}.annotate_celltypes.timing.tsv", emit: timings
 
@@ -34,25 +34,19 @@ workflow annotate_celltypes {
     input
 
     main:
-    def ch_zarrs = samplesFrom(input, ['sample', 'path'])
-
-    ch_zarrs.map { sample, input_path ->
-            tuple(sample, "${params.outdir}/${sample}/annotate_celltypes", input_path)
-        }
-        .set { ch_annotate_celltypes_inputs } // tuple(sample, publish_dir, zarr)
-
     def reference = file(params.reference
         ?: "${projectDir}/assets/reference/shami_human_testis_centroids.csv.gz")
 
-    ANNOTATE_CELLTYPES(ch_annotate_celltypes_inputs, reference, file("${projectDir}/bin/timer.py"))
+    ANNOTATE_CELLTYPES(samplesFrom(input, ['sample', 'path']), reference,
+                       file("${projectDir}/bin/timer.py"))
 
-    ANNOTATE_CELLTYPES.out.artifacts
-        .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }
+    ANNOTATE_CELLTYPES.out.zarr
+        .map { sample, zarr ->
+            "${sample},${params.outdir}/${sample}/annotate_celltypes/${zarr.name}"
+        }
         .collectFile(name: 'annotate_celltypes_samplesheet.csv', storeDir: params.outdir,
                      seed: 'sample,path', newLine: true, sort: true)
 
     emit:
-    artifacts = ANNOTATE_CELLTYPES.out.artifacts
-    zarr      = ANNOTATE_CELLTYPES.out.artifacts
-        .map { sample, publish_dir, zarr -> tuple(sample, zarr) }
+    zarr = ANNOTATE_CELLTYPES.out.zarr
 }

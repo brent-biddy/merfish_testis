@@ -16,14 +16,14 @@ def centroidStem(sample) {
 process CREATE_CENTROIDS {
     tag "${sample}"
 
-    publishDir { publish_dir }, mode: 'copy'
+    publishDir { "${params.outdir}/${sample}/create_centroids" }, mode: 'copy'
 
     input:
-    tuple val(sample), val(publish_dir), path(zarr)
+    tuple val(sample), path(zarr)
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir), path("${centroidStem(sample)}.h5ad"), emit: artifacts
+    tuple val(sample), path("${centroidStem(sample)}.h5ad"), emit: centroids
     path "${centroidStem(sample)}.timing.tsv", emit: timings
 
     script:
@@ -53,25 +53,18 @@ workflow create_centroids {
         ? ch_zarrs.map { sample, zarr -> tuple(sample, zarr.toString()) }
         : ch_zarrs.map { sample, zarr -> tuple(sample, publishedSource(sample, zarr)) }
 
-    ch_zarrs.map { sample, zarr ->
-            tuple(sample, "${params.outdir}/${sample}/create_centroids", zarr)
-        }
-        .set { ch_create_centroids_inputs } // tuple(sample, publish_dir, zarr)
-
-    CREATE_CENTROIDS(ch_create_centroids_inputs, file("${projectDir}/bin/timer.py"))
+    CREATE_CENTROIDS(ch_zarrs, file("${projectDir}/bin/timer.py"))
 
     def sheet = params.group_by ? "create_centroids_${params.group_by}" : 'create_centroids'
 
-    CREATE_CENTROIDS.out.artifacts
+    CREATE_CENTROIDS.out.centroids
         .join(ch_sources)
-        .map { sample, publish_dir, centroids, source ->
-            "${sample},${source},${publish_dir}/${centroids.name}"
+        .map { sample, centroids, source ->
+            "${sample},${source},${params.outdir}/${sample}/create_centroids/${centroids.name}"
         }
         .collectFile(name: "${sheet}_samplesheet.csv", storeDir: params.outdir,
                      seed: 'sample,path,centroid_path', newLine: true, sort: true)
 
     emit:
-    artifacts = CREATE_CENTROIDS.out.artifacts
-    centroids = CREATE_CENTROIDS.out.artifacts
-        .map { sample, publish_dir, centroids -> tuple(sample, centroids) }
+    centroids = CREATE_CENTROIDS.out.centroids
 }

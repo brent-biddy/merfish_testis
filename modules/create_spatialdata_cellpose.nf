@@ -3,15 +3,14 @@ include { samplesFrom } from './samplesheet'
 process CREATE_SPATIALDATA_CELLPOSE {
     tag "${sample}"
 
-    publishDir { publish_dir }, mode: 'copy'
+    publishDir { "${params.outdir}/${sample}/create_spatialdata_cellpose" }, mode: 'copy'
 
     input:
-    tuple val(sample), val(publish_dir), path(region_dir), path(vpt_dir)
+    tuple val(sample), path(region_dir), path(vpt_dir)
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir),
-          path("${sample}.create_spatialdata_cellpose.zarr"), emit: artifacts
+    tuple val(sample), path("${sample}.create_spatialdata_cellpose.zarr"), emit: zarr
     path "${sample}.create_spatialdata_cellpose.timing.tsv", emit: timings
 
     script:
@@ -33,21 +32,16 @@ workflow create_spatialdata_cellpose {
     input
 
     main:
-    def ch_region_dirs = samplesFrom(input, ['sample', 'path', 'vpt_path'])
+    CREATE_SPATIALDATA_CELLPOSE(samplesFrom(input, ['sample', 'path', 'vpt_path']),
+                                file("${projectDir}/bin/timer.py"))
 
-    ch_region_dirs.map { sample, region_dir, vpt_dir ->
-            tuple(sample, "${params.outdir}/${sample}/create_spatialdata_cellpose",
-                  region_dir, vpt_dir)
+    CREATE_SPATIALDATA_CELLPOSE.out.zarr
+        .map { sample, zarr ->
+            "${sample},${params.outdir}/${sample}/create_spatialdata_cellpose/${zarr.name}"
         }
-        .set { ch_create_spatialdata_cellpose_inputs } // tuple(sample, publish_dir, region_dir, vpt_dir)
-
-    CREATE_SPATIALDATA_CELLPOSE(ch_create_spatialdata_cellpose_inputs, file("${projectDir}/bin/timer.py"))
-
-    CREATE_SPATIALDATA_CELLPOSE.out.artifacts
-        .map { sample, publish_dir, zarr -> "${sample},${publish_dir}/${zarr.name}" }
         .collectFile(name: 'create_spatialdata_cellpose_samplesheet.csv', storeDir: params.outdir,
                      seed: 'sample,path', newLine: true, sort: true)
 
     emit:
-    artifacts = CREATE_SPATIALDATA_CELLPOSE.out.artifacts
+    zarr = CREATE_SPATIALDATA_CELLPOSE.out.zarr
 }

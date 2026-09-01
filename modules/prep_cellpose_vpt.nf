@@ -3,14 +3,14 @@ include { samplesFrom } from './samplesheet'
 process PREP_CELLPOSE_VPT {
     tag "${sample}"
 
-    publishDir { publish_dir }, mode: 'copy'
+    publishDir { "${params.outdir}/${sample}/prep_cellpose_vpt" }, mode: 'copy'
 
     input:
-    tuple val(sample), val(publish_dir), path(region_dir), path(cellpose_dir)
+    tuple val(sample), path(region_dir), path(cellpose_dir)
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir), path("cellpose_*.{csv,parquet}"), emit: artifacts
+    tuple val(sample), path("cellpose_*.{csv,parquet}"), emit: vpt_files
     path "${sample}.prep_cellpose_vpt.timing.tsv", emit: timings
 
     script:
@@ -34,21 +34,18 @@ workflow prep_cellpose_vpt {
     main:
     def ch_segmentations = samplesFrom(input, ['sample', 'path', 'cellpose_path'])
 
-    ch_segmentations.map { sample, region_dir, cellpose_dir ->
-            tuple(sample, "${params.outdir}/${sample}/prep_cellpose_vpt", region_dir, cellpose_dir)
-        }
-        .set { ch_prep_cellpose_vpt_inputs } // tuple(sample, publish_dir, region_dir, cellpose_dir)
-
-    PREP_CELLPOSE_VPT(ch_prep_cellpose_vpt_inputs, file("${projectDir}/bin/timer.py"))
+    PREP_CELLPOSE_VPT(ch_segmentations, file("${projectDir}/bin/timer.py"))
 
     // Rejoined rather than carried through the process, which never reads it: the region
     // staged into the task is a work dir, not where the caller pointed.
-    PREP_CELLPOSE_VPT.out.artifacts
+    PREP_CELLPOSE_VPT.out.vpt_files
         .join(ch_segmentations.map { sample, region_dir, cellpose_dir -> tuple(sample, "${region_dir}") })
-        .map { sample, publish_dir, files, region_path -> "${sample},${region_path},${publish_dir}" }
+        .map { sample, files, region_path ->
+            "${sample},${region_path},${params.outdir}/${sample}/prep_cellpose_vpt"
+        }
         .collectFile(name: 'prep_cellpose_vpt_samplesheet.csv', storeDir: params.outdir,
                      seed: 'sample,path,vpt_path', newLine: true, sort: true)
 
     emit:
-    artifacts = PREP_CELLPOSE_VPT.out.artifacts
+    vpt_files = PREP_CELLPOSE_VPT.out.vpt_files
 }

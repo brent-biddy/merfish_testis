@@ -3,14 +3,14 @@ include { samplesFrom } from './samplesheet'
 process CREATE_SPATIALDATA {
     tag "${sample}"
 
-    publishDir { publish_dir }, mode: 'copy'
+    publishDir { "${params.outdir}/${sample}/create_spatialdata" }, mode: 'copy'
 
     input:
-    tuple val(sample), val(publish_dir), path(region_dir)
+    tuple val(sample), path(region_dir)
     path 'timer.py'
 
     output:
-    tuple val(sample), val(publish_dir), path("${sample}.create_spatialdata.zarr"), emit: artifacts
+    tuple val(sample), path("${sample}.create_spatialdata.zarr"), emit: zarr
     path "${sample}.create_spatialdata.timing.tsv", emit: timings
 
     script:
@@ -31,22 +31,13 @@ workflow create_spatialdata {
     input
 
     main:
-    def ch_region_dirs = samplesFrom(input, ['sample', 'path'])
+    CREATE_SPATIALDATA(samplesFrom(input, ['sample', 'path']), file("${projectDir}/bin/timer.py"))
 
-    ch_region_dirs.map { sample, input_path ->
-            tuple(sample, "${params.outdir}/${sample}/create_spatialdata", input_path)
-        }
-        .set { ch_create_spatialdata_inputs } // tuple(sample, publish_dir, region_dir)
-
-    CREATE_SPATIALDATA(ch_create_spatialdata_inputs, file("${projectDir}/bin/timer.py"))
-
-    CREATE_SPATIALDATA.out.artifacts
-        .map { sample, publish_dir, artifact -> "${sample},${publish_dir}/${artifact.name}" }
+    CREATE_SPATIALDATA.out.zarr
+        .map { sample, zarr -> "${sample},${params.outdir}/${sample}/create_spatialdata/${zarr.name}" }
         .collectFile(name: 'create_spatialdata_samplesheet.csv', storeDir: params.outdir,
                      seed: 'sample,path', newLine: true, sort: true)
 
     emit:
-    artifacts = CREATE_SPATIALDATA.out.artifacts
-    zarr      = CREATE_SPATIALDATA.out.artifacts
-        .map { sample, publish_dir, zarr -> tuple(sample, zarr) }
+    zarr = CREATE_SPATIALDATA.out.zarr
 }
