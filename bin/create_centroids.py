@@ -79,6 +79,7 @@ def get_centroids(adata, column):
     out.obs["grouping"] = column
     out.obs["group"] = out.obs_names
     out.obs["n_cells"] = cp10k.obs["n_obs_aggregated"].to_numpy()
+    out.obs_names = [f"{column}_{group}" for group in out.obs["group"]]
 
     return out
 
@@ -152,10 +153,7 @@ def main():
             centroid_list.append(get_centroids(adata, column))
 
     with timer("Assemble"):
-        # obs identifies a row by (grouping, group), both captured in get_centroids;
-        # index_unique only spares concat a duplicate-name warning before the renumbering.
-        centroids = ad.concat(centroid_list, axis=0, join="outer", index_unique="-")
-        centroids.obs_names = [str(row) for row in range(centroids.n_obs)]
+        centroids = ad.concat(centroid_list, axis=0, join="outer")
         centroids.obs["sample"] = args.sample
 
         # Pinned, because anndata converts string columns to categorical only when the
