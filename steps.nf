@@ -2,21 +2,16 @@
 
 //   nextflow run steps.nf -profile wsl --step <name> --samplesheet <path>
 //
-// Steps:
-//   create_spatialdata       samplesheet: sample, path   (path = MERSCOPE region directory)
-//   prep_cellpose_vpt        samplesheet: sample, path, cellpose_path
-//                                             (path = MERSCOPE region directory,
-//                                              cellpose_path = merged bespoke cellpose dir)
-//   create_spatialdata_cellpose  samplesheet: sample, path, vpt_path
-//                                             (path = MERSCOPE region directory,
-//                                              vpt_path = its VPT cellpose output directory)
-//   cluster_spatialdata_gpu  samplesheet: sample, path   (path = zarr from either create step)
-//   annotate_celltypes       samplesheet: sample, path   (path = zarr from cluster_spatialdata_gpu)
-//   create_centroids         samplesheet: sample, path   (path = zarr from either of the two above)
-//   render_cohort            samplesheet: sample, and any path columns the notebook globs
-//                            one render over every row; --to picks one declared format
-//   render_sample            same samplesheet and --notebook; one render per row
-//                            --notebook names the report to render
+// Steps, and the samplesheet columns each reads. Both render steps also need --notebook.
+//
+//   create_spatialdata           sample, path=region dir
+//   prep_cellpose_vpt            sample, path=region dir, cellpose_path=merged bespoke cellpose
+//   create_spatialdata_cellpose  sample, path=region dir, vpt_path=its VPT cellpose output
+//   cluster_spatialdata_gpu      sample, path=zarr from either create step
+//   annotate_celltypes           sample, path=zarr from cluster_spatialdata_gpu
+//   create_centroids             sample, path=zarr from either of the two above
+//   render_cohort                sample, and any path columns the notebook globs
+//   render_sample                same as render_cohort, one render per row
 
 include { create_spatialdata      } from './modules/create_spatialdata'
 include { prep_cellpose_vpt       } from './modules/prep_cellpose_vpt'
@@ -39,12 +34,14 @@ workflow {
     if (params.step.startsWith('render') && !params.notebook)
         error "Please provide --notebook: the .qmd to render, e.g. notebooks/celltype_report.qmd"
 
+    def notebook = params.notebook ? file(params.notebook) : null
+
     if      (params.step == 'create_spatialdata')      create_spatialdata(samplePathPairs())
     else if (params.step == 'prep_cellpose_vpt')       prep_cellpose_vpt(sampleRegionCellpose())
     else if (params.step == 'create_spatialdata_cellpose') create_spatialdata_cellpose(sampleRegionVpt())
     else if (params.step == 'cluster_spatialdata_gpu') cluster_spatialdata_gpu(samplePathPairs())
     else if (params.step == 'annotate_celltypes')      annotate_celltypes(samplePathPairs())
     else if (params.step == 'create_centroids')        create_centroids(samplePathWithSource())
-    else                                               render(sampleWithPaths(), file(params.notebook),
-                                                              params.to, params.step == 'render_sample')
+    else if (params.step == 'render_cohort')           render(sampleWithPaths(), notebook, params.to, false)
+    else if (params.step == 'render_sample')           render(sampleWithPaths(), notebook, params.to, true)
 }
