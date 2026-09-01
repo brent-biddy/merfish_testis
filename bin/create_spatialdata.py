@@ -126,9 +126,11 @@ def staged_region_dir(region_dir, staging_dir):
         replaced.add(hdf5_dir.name)
     for entry in region_dir.iterdir():
         if entry.name not in replaced:
+            # Replaced rather than skipped: exists() follows the link, so one left by an
+            # earlier run pointing somewhere gone reads as absent and symlink_to then fails.
             link = staging_dir / entry.name
-            if not link.exists():
-                link.symlink_to(entry.resolve())
+            link.unlink(missing_ok=True)
+            link.symlink_to(entry.resolve())
 
     if reorder:
         print(f"Reordering cell_metadata.csv to match cell_by_gene.csv ({len(counts_index):,} cells).")
