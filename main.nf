@@ -12,11 +12,11 @@ workflow {
     cluster_spatialdata_gpu(create_spatialdata.out.zarr)
     annotate_celltypes(cluster_spatialdata_gpu.out.zarr)
 
-    create_centroids(
-        annotate_celltypes.out.artifacts.map { sample, publish_dir, zarr ->
-            tuple(sample, zarr, "${publish_dir}/${zarr.name}")
-        }
-    )
+    annotate_celltypes.out.artifacts
+        .map { sample, publish_dir, zarr -> tuple(sample, zarr, "${publish_dir}/${zarr.name}") }
+        .set { ch_centroid_inputs } // tuple(sample, zarr, input_dir)
+
+    create_centroids(ch_centroid_inputs)
 
     create_centroids.out.centroids
         .join(annotate_celltypes.out.zarr, remainder: true)
