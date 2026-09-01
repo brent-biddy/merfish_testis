@@ -60,9 +60,8 @@ That is what lets a report notebook ask for a specific step —
 `glob("*.annotate_celltypes.zarr")` — instead of `*.zarr` and hoping, and it is why the render
 step can stage everything into one directory rather than numbered `input*/` subdirectories.
 
-A `--group_by` run qualifies the stem rather than extending it —
-`<sample>.<column>.centroids.h5ad` — so `.centroids` stays the last token before the extension
-and one glob takes both.
+A `--group_by` run puts the column in the name — `<sample>.<column>.centroids.h5ad`, not
+`<sample>.centroids.<column>.h5ad` — so one glob takes both.
 
 Output publishes beside the code, so a result sits next to the analysis that produced it.
 Each invocation gets its own directory under `results/`, named by a timestamp `run_id`:
@@ -293,10 +292,9 @@ Builds one row per cluster from the clustered zarr, at every resolution in the s
 later steps and reports never open the counts matrix. Writes a small h5ad holding summed
 CP10K in `X` and summed raw counts in `layers["counts"]`, with `n_cells` per row.
 
-Everything is a **sum, not a mean**, because sums are additive: the profile of any union
-of clusters is the row-wise sum of its members, and `n_cells` sums with it. The reference
-centroids in `assets/reference` are `ln(mean + 1)`, so the comparable value built from
-this store is `log1p(X / n_cells)`.
+Everything is a **sum, not a mean**, so clusters pool: any union's profile is the row-wise
+sum of its members, and `n_cells` sums with it. The reference centroids in
+`assets/reference` are `ln(mean + 1)`, so the comparable value here is `log1p(X / n_cells)`.
 
 Its own step rather than part of step 2: Nextflow hashes the task script, so folding it in
 would make a change to the centroid recipe re-run the GPU Leiden sweep.
