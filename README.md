@@ -34,7 +34,7 @@ analysis rather than a usage error.
 
 ### Profiles
 
-The defaults apply unconditionally, from `conf/defaults.config`, and a profile states only
+The defaults apply unconditionally, from `nextflow.config` itself, and a profile states only
 its difference. There is deliberately no `standard` profile: Nextflow only auto-applies that
 when `-profile` is omitted entirely, so naming one would mean `-profile wsl` silently dropped
 the defaults with it.
@@ -440,8 +440,8 @@ check the slide count and titles.
 ```
 main.nf          a chained analysis; `nextflow run .` resolves here
 steps.nf         step dispatch, for working one step at a time
-nextflow.config  params, and which site profiles exist
-conf/            defaults.config applies always; wsl and oscer state their difference
+nextflow.config  params, the defaults that always apply, and which site profiles exist
+conf/            one file per site: wsl and oscer state their difference
 bin/             all executable code
 modules/         one file per step: its process and its workflow
 notebooks/       report notebooks
