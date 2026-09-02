@@ -120,7 +120,7 @@ filename prefixes.
 | Step | Script | Samplesheet | Input | Output |
 |------|--------|-------------|-------|--------|
 | 1 | `bin/create_spatialdata.py` | `sample, path` | MERSCOPE region directory | `<sample>.<step>.zarr` |
-| 1a | `bin/prep_cellpose_vpt.py` | `sample, path, cellpose_path` | MERSCOPE region directory and a merged bespoke cellpose segmentation | `cellpose_*.{csv,parquet}` |
+| 1a | `bin/prep_cellpose_vpt.py` | `sample, path, cellpose_path` | MERSCOPE region directory and a merged bespoke cellpose segmentation | `cellpose_*.{csv,parquet}` and `detected_transcripts.csv` |
 | 1b | `bin/create_spatialdata_cellpose.py` | `sample, path, vpt_path` | MERSCOPE region directory and VPT cellpose output, from a VPT run or from step 1a | `<sample>.<step>.zarr` |
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.<step>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.<step>.zarr` |
@@ -217,6 +217,18 @@ nextflow run steps.nf -profile oscer --step prep_cellpose_vpt \
 nextflow run steps.nf -profile oscer --step create_spatialdata_cellpose \
     --samplesheet results/<run_id>/prep_cellpose_vpt_samplesheet.csv
 ```
+
+It writes a fourth file VPT itself only writes on request: the region's transcripts with a
+`cell_id` column, `-1` where a transcript is in no cell. Assignment is the same raster
+lookup that produced the counts — a transcript's `global_z` is a plane index, not a depth in
+microns, so it selects the labels plane directly. Because a cell's boundary is one plane and
+its transcripts are three-dimensional, a transcript can belong to a cell and still fall
+outside the polygon drawn for it.
+
+Every cell the segmentation found gets a row in the counts and the metadata, including one
+whose mask traced to no polygon; `has_boundary` in the metadata says which. Only the parquet
+can lose a cell, and a store missing a boundary is undrawable where a store missing the cell
+is unrecoverable.
 
 The handoff sheet it writes is already in step 1b's `sample, path, vpt_path` shape,
 forwarding the region unchanged and naming this step's output as the VPT directory.

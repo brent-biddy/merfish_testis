@@ -10,7 +10,7 @@ process PREP_CELLPOSE_VPT {
     path 'timer.py'
 
     output:
-    tuple val(sample), path("cellpose_*.{csv,parquet}"), emit: vpt_files
+    tuple val(sample), path("*.{csv,parquet}"), emit: vpt_files
     path "${sample}.prep_cellpose_vpt.timing.tsv", emit: timings
 
     script:
@@ -22,6 +22,7 @@ process PREP_CELLPOSE_VPT {
     stub:
     """
     touch cellpose_cell_by_gene.csv cellpose_cell_metadata.csv cellpose_micron_space.parquet
+    touch detected_transcripts.csv
     touch ${sample}.prep_cellpose_vpt.timing.tsv
     """
 }

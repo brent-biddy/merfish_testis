@@ -32,8 +32,13 @@ The segmentation is 3D over 7 planes and a store holds one, so each cell's bound
 from the plane it covers most; a cell centred near the top or bottom of the section still
 gets one, and which plane lands in obs["z_plane"].
 
-Writes <outdir>/cellpose_{cell_by_gene.csv,cell_metadata.csv,micron_space.parquet} plus a
-timing TSV. Point create_spatialdata_cellpose.py --vpt_path at <outdir>.
+Every cell the segmentation found gets a row in the counts and the metadata, including one
+whose mask traced to nothing: the parquet is the only output a missing polygon can keep it
+out of, and metadata["has_boundary"] says which those are.
+
+Writes <outdir>/cellpose_{cell_by_gene.csv,cell_metadata.csv,micron_space.parquet}, a
+detected_transcripts.csv carrying the cell_id column VPT would have written, and a timing
+TSV. Point create_spatialdata_cellpose.py --vpt_path at <outdir>.
 
 Usage:
     prep_cellpose_vpt.py --sample b2r0_cellpose \\
@@ -77,6 +82,11 @@ OUTPUT_NAMES = {
 LABEL_MAP_SUFFIX = "-cellp-label-map.npz"
 COUNTS_SUFFIX = "-cell-by-gene.npz"
 
+# Read from the region and rewritten with a cell_id column. VPT's own name for both the
+# column and the file, and -1 for a transcript in no cell -- see vpt/partition_transcripts.
+TRANSCRIPTS_NAME = "detected_transcripts.csv"
+UNASSIGNED = -1
+
 
 def find_one(directory, suffix):
     """Return the single file in directory ending in suffix."""
@@ -111,7 +121,46 @@ def load_segmentation(cellpose_dir):
             f"{find_one(cellpose_dir, COUNTS_SUFFIX).name} has {len(counts):,} rows; "
             f"expected {n_cells + 1:,} -- one per cell plus row 0 for background."
         )
+
+    # Every array below is indexed by the compact id, so two labels sharing one would
+    # silently merge two cells into a single row.
+    present = np.nonzero(label_map)[0]
+    if len(np.unique(label_map[present])) != len(present):
+        raise ValueError(
+            f"label_map is not one-to-one: {len(present):,} labels map to "
+            f"{len(np.unique(label_map[present])):,} distinct cells."
+        )
     return labels, label_map, counts, centres, volumes
+
+
+def label_of_cell(label_map):
+    """Return an array giving each compact cell id the label_map index that reaches it.
+
+    The inverse of the label_map, which load_segmentation has checked is one-to-one. Index
+    0 is unused, so the array lines up with the compact ids.
+    """
+    present = np.nonzero(label_map)[0]
+    reverse = np.zeros(int(label_map.max()) + 1, dtype=np.int64)
+    reverse[label_map[present]] = present
+    return reverse
+
+
+def cell_bounds(slices, label_index, transform):
+    """Return per-cell (min_x, min_y, max_x, max_y) in microns.
+
+    From merge.py's bounding boxes rather than the traced polygons: they cover every plane
+    the cell occupies, and they exist for a cell whose trace produced nothing.
+    """
+    row_starts = np.array([slices[index][1].start for index in label_index])
+    row_stops = np.array([slices[index][1].stop for index in label_index])
+    column_starts = np.array([slices[index][2].start for index in label_index])
+    column_stops = np.array([slices[index][2].stop for index in label_index])
+
+    # Both corners through the affine, then min and max, so a rotation could not flip them.
+    x0, y0 = to_microns(row_starts, column_starts, transform)
+    x1, y1 = to_microns(row_stops, column_stops, transform)
+    return (np.minimum(x0, x1), np.minimum(y0, y1),
+            np.maximum(x0, x1), np.maximum(y0, y1))
 
 
 def plane_areas(labels, n_labels):
@@ -147,16 +196,85 @@ def check_volumes(areas, label_map, volumes):
     print(f"Volume check: {len(present):,} cells match cell-vols.npz exactly.")
 
 
-def pixel_to_micron_transform(region_dir):
-    """Return the affine taking mosaic pixels to microns, inverting the region's own."""
+def micron_to_pixel_transform(region_dir):
+    """Return the region's own affine taking microns to mosaic pixels."""
     path = region_dir / "images" / "micron_to_mosaic_pixel_transform.csv"
     if not path.exists():
         raise FileNotFoundError(
-            f"No {path.name} in {path.parent}. It is what puts the segmentation's pixel "
-            f"coordinates into the micron space the transcripts and images use."
+            f"No {path.name} in {path.parent}. It is what relates the segmentation's pixel "
+            f"coordinates to the micron space the transcripts and images use."
         )
-    micron_to_pixel = pd.read_csv(path, sep=r"\s+", header=None).values
-    return np.linalg.inv(micron_to_pixel)
+    return pd.read_csv(path, sep=r"\s+", header=None).values
+
+
+def assign_transcripts(region_dir, labels, label_map, to_pixels):
+    """Return the region's transcripts with the cell_id column VPT would have written.
+
+    global_z is a plane index, 0 to 6, not a micron depth -- so it selects the labels plane
+    directly, and the transcript's micron position indexes into it. A transcript is in
+    whatever cell owns the voxel it lands in, which is the same raster merge.py counted, so
+    the totals should reproduce its cell-by-gene matrix exactly.
+
+    Assignment is 3D and a boundary is one plane, so a transcript can belong to a cell and
+    still fall outside the polygon drawn for it.
+    """
+    transcripts = pd.read_csv(region_dir / TRANSCRIPTS_NAME)
+
+    pixels = to_pixels @ np.stack([
+        transcripts["global_x"].to_numpy(),
+        transcripts["global_y"].to_numpy(),
+        np.ones(len(transcripts)),
+    ])
+    columns = np.rint(pixels[0]).astype(np.int64)
+    rows = np.rint(pixels[1]).astype(np.int64)
+    planes = transcripts["global_z"].to_numpy().astype(np.int64)
+
+    _, height, width = labels.shape
+    on_raster = (
+        (rows >= 0) & (rows < height) & (columns >= 0) & (columns < width)
+        & (planes >= 0) & (planes < labels.shape[0])
+    )
+    cell_id = np.full(len(transcripts), UNASSIGNED, dtype=np.int64)
+
+    for z in range(labels.shape[0]):
+        here = np.nonzero(on_raster & (planes == z))[0]
+        if not len(here):
+            continue
+        plane = np.asarray(labels[z])
+        raw = plane[rows[here], columns[here]]
+        in_cell = raw > 0
+        # label_map holds 0 for a label no cell claims, which is not VPT's sentinel.
+        mapped = label_map[raw[in_cell] - 1]
+        found = here[in_cell][mapped > 0]
+        cell_id[found] = mapped[mapped > 0]
+        print(f"  z={z}: {len(found):,} of {len(here):,} transcripts in a cell")
+
+    transcripts["cell_id"] = cell_id
+    return transcripts
+
+
+def check_counts(transcripts, counts, genes, entity_ids):
+    """Report how far the transcripts' own per-cell totals sit from merge.py's matrix.
+
+    Printed rather than raised: merge.py's assignment rule is not recorded anywhere, and
+    this has never run against a real segmentation. Tighten it to an error once a run has
+    shown the two agree exactly.
+    """
+    assigned = transcripts[transcripts["cell_id"] > 0]
+    observed = (
+        pd.crosstab(assigned["cell_id"], assigned["gene"])
+        .reindex(index=entity_ids, columns=genes, fill_value=0)
+        .to_numpy()
+    )
+    recorded = counts[entity_ids]
+
+    per_cell = (observed == recorded).all(axis=1)
+    difference = int(np.abs(observed - recorded).sum())
+    print(f"Counts check: {int(per_cell.sum()):,} of {len(entity_ids):,} cells reproduce "
+          f"cell-by-gene exactly; {difference:,} transcripts differ in total.")
+    if difference:
+        print("  merge.py assigned transcripts by some other rule -- the counts written "
+              "here are still its own, so only the cell_id column is in question.")
 
 
 def to_microns(rows, columns, transform):
@@ -200,10 +318,13 @@ def cell_polygon(mask, y_offset, x_offset, transform):
 
 
 def build_boundaries(labels, slices, label_map, best_plane, transform):
-    """Trace one polygon per cell, each from the plane it covers most, a plane at a time."""
+    """Trace one polygon per cell, each from the plane it covers most, a plane at a time.
+
+    A cell whose mask traces to nothing is left out of the parquet; it still gets a row in
+    the counts and the metadata, so the table carries every cell the segmentation found.
+    """
     entity_ids = []
     geometries = []
-    planes = []
 
     for z in range(labels.shape[0]):
         on_this_plane = np.nonzero(best_plane == z)[0]        # label - 1
@@ -222,13 +343,11 @@ def build_boundaries(labels, slices, label_map, best_plane, transform):
 
             entity_ids.append(int(label_map[index]))
             geometries.append(polygon)
-            planes.append(z)
 
-    boundaries = gpd.GeoDataFrame(
+    return gpd.GeoDataFrame(
         {"EntityID": entity_ids, "ZIndex": BOUNDARY_Z_INDEX, "Geometry": geometries},
         geometry="Geometry",
     )
-    return boundaries, pd.Series(planes, index=entity_ids, name="z_plane")
 
 
 def parse_args():
@@ -285,7 +404,10 @@ def main():
         )
     print(f"Genes:    {len(genes):,}")
 
-    transform = pixel_to_micron_transform(region_dir)
+    # Both directions are wanted: transcripts come in microns and index the pixel raster,
+    # while the segmentation is in pixels and everything written out is in microns.
+    to_pixels = micron_to_pixel_transform(region_dir)
+    transform = np.linalg.inv(to_pixels)
 
     # merge.py already ran find_objects over the volume and pickled it; reuse, do not rebuild.
     slicee_path = find_one(cellpose_dir, "-slicee.pkl")
@@ -309,13 +431,10 @@ def main():
     best_plane[label_map == 0] = -1
 
     with timer("Trace boundaries"):
-        boundaries, cell_planes = build_boundaries(
-            labels, slices, label_map, best_plane, transform
-        )
-    print(f"Traced {len(boundaries):,} cell boundaries.")
+        boundaries = build_boundaries(labels, slices, label_map, best_plane, transform)
 
-    # merscope() drops invalid geometries without warning, and the counts and metadata below
-    # are written for every row here -- so the store would name cells it has no boundary for.
+    # merscope() drops invalid geometries without warning, so a polygon that survives the
+    # trace but not the reader would leave its cell in the table with nothing to draw.
     invalid = int((~boundaries.geometry.is_valid).sum())
     if invalid:
         raise ValueError(
@@ -323,11 +442,13 @@ def main():
             f"would drop them silently and leave their counts in the table."
         )
 
-    # One order for all three, and only cells that got a polygon: merscope() hands the counts
-    # and the metadata straight to AnnData, which requires their indexes to match.
-    entity_ids = boundaries["EntityID"].to_numpy()
-    order = np.argsort(entity_ids)
-    entity_ids = entity_ids[order]
+    # Every cell the segmentation found, whether or not its mask traced: the counts and the
+    # centre do not depend on the polygon, and a cell missing from the table cannot be
+    # recovered downstream, where one missing from the parquet is only undrawable.
+    entity_ids = np.unique(label_map[label_map > 0])
+    label_index = label_of_cell(label_map)[entity_ids]
+    order = np.argsort(boundaries["EntityID"].to_numpy())
+    print(f"Traced {len(boundaries):,} boundaries for {len(entity_ids):,} cells.")
 
     with timer("Write counts"):
         cell_by_gene = pd.DataFrame(counts[entity_ids], index=entity_ids, columns=genes)
@@ -338,7 +459,7 @@ def main():
         centre_x, centre_y = to_microns(
             centres[entity_ids - 1, 1], centres[entity_ids - 1, 2], transform
         )
-        bounds = boundaries.geometry.bounds.to_numpy()[order]
+        min_x, min_y, max_x, max_y = cell_bounds(slices, label_index, transform)
         # merge.py counted voxels; a Vizgen cell_metadata.csv holds cubic microns, which is
         # what everything downstream reads this column expecting.
         voxel_microns = abs(np.linalg.det(transform[:2, :2])) * Z_STEP_MICRONS
@@ -349,12 +470,14 @@ def main():
                 "volume_voxels": volumes[entity_ids - 1],
                 "center_x": centre_x,
                 "center_y": centre_y,
-                "min_x": bounds[:, 0],
-                "min_y": bounds[:, 1],
-                "max_x": bounds[:, 2],
-                "max_y": bounds[:, 3],
-                # Which plane the boundary came from; the parquet itself is all ZIndex 0.
-                "z_plane": cell_planes.loc[entity_ids].to_numpy(),
+                "min_x": min_x,
+                "min_y": min_y,
+                "max_x": max_x,
+                "max_y": max_y,
+                # The plane the boundary was taken from, or would have been had it traced;
+                # the parquet itself is all ZIndex 0.
+                "z_plane": best_plane[label_index],
+                "has_boundary": np.isin(entity_ids, boundaries["EntityID"].to_numpy()),
             }
         ).set_index("EntityID")
         metadata.to_csv(outdir / OUTPUT_NAMES["cell_metadata"])
@@ -362,8 +485,15 @@ def main():
     with timer("Write boundaries"):
         boundaries.iloc[order].to_parquet(outdir / OUTPUT_NAMES["cell_boundaries"])
 
-    print(f"\nWrote {len(entity_ids):,} cells:")
-    for name in OUTPUT_NAMES.values():
+    with timer("Assign transcripts"):
+        transcripts = assign_transcripts(region_dir, labels, label_map, to_pixels)
+        transcripts.to_csv(outdir / TRANSCRIPTS_NAME, index=False)
+
+    check_counts(transcripts, counts, genes, entity_ids)
+
+    print(f"\nWrote {len(entity_ids):,} cells, "
+          f"{len(entity_ids) - len(boundaries):,} of them without a boundary:")
+    for name in list(OUTPUT_NAMES.values()) + [TRANSCRIPTS_NAME]:
         print(f"  {name}")
 
     timing_summary(outdir / f"{args.sample}.prep_cellpose_vpt.timing.tsv")
