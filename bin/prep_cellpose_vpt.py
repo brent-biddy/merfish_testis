@@ -123,7 +123,10 @@ def plane_areas(labels, n_labels):
     areas = np.zeros((labels.shape[0], n_labels + 1), dtype=np.int64)
     for z in range(labels.shape[0]):
         plane = np.asarray(labels[z])
-        areas[z] = np.bincount(plane.ravel(), minlength=n_labels + 1)
+        # bincount takes intp, so it casts the whole plane -- twice the plane again on top
+        # of the plane itself. In blocks that cast is a sixteenth, for identical counts.
+        for block in np.array_split(plane.ravel(), 16):
+            areas[z] += np.bincount(block, minlength=n_labels + 1)
         print(f"  z={z}: {int((areas[z][1:] > 0).sum()):,} labels present")
     return areas
 
