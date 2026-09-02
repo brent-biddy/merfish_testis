@@ -203,8 +203,8 @@ def main():
     for name in sdata.points:
         print(f"  points  {name}")
 
-    # Record the sample id in the object; the workflow stages files under indexed names,
-    # so the filename is not a reliable source for it downstream.
+    # Record the sample id in the object: every later step and the report read it from
+    # there rather than parsing a staged filename.
     for name, table in sdata.tables.items():
         table.obs["sample"] = args.sample
         table.uns["z_layer"] = Z_LAYER
