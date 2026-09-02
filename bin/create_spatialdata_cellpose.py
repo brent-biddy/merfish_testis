@@ -3,9 +3,11 @@
 create_spatialdata_cellpose.py - Convert a cellpose re-segmentation of a MERSCOPE region
 to a SpatialData Zarr store.
 
-Reads two directories. The MERSCOPE region directory supplies the mosaic images and the
-detected transcripts, which the re-segmentation does not replace. The VPT output directory
-supplies the cells: the count matrix, the cell metadata, and the boundary polygons.
+Reads two directories. The MERSCOPE region directory supplies the mosaic images, which the
+re-segmentation does not touch. The VPT output directory supplies everything it does: the
+count matrix, the cell metadata, the boundary polygons, and the detected transcripts, which
+VPT rewrites with a cell_id column naming the cell each one falls in. The transcripts are
+staged in over the region's own copy, which has no such column.
 
 Both are named on the command line. Which segmentation a store came from is not
 recoverable from its contents, so the VPT directory is recorded into the table.

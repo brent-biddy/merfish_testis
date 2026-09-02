@@ -249,31 +249,39 @@ and a handoff sheet; a run uses one or the other, not both.
 `--vpt_path` takes either a real VPT output directory or step 1a's output, which is
 written in the same shape for exactly that reason.
 
-It reads two directories, because a re-segmentation replaces only the cells. The MERSCOPE
-region directory supplies the mosaic images and the detected transcripts. The VPT output
-directory supplies the count matrix, the cell metadata and the boundary polygons:
+It reads two directories. A re-segmentation replaces the cells and which cell each
+transcript belongs to, so the MERSCOPE region directory supplies only the mosaic images; the
+VPT output directory supplies the rest:
 
 ```
 <region>/Cellpose/cellpose_cell_by_gene.csv
                   cellpose_cell_metadata.csv
                   cellpose_micron_space.parquet
+                  detected_transcripts.csv
 ```
 
-`merscope()` reads this natively through its `vpt_outputs` argument, so nothing is
-converted. All three files are named explicitly rather than by pointing the reader at the
-directory, because only the boundaries carry the segmentation method in their name: these
-are the names a Vizgen cellpose delivery uses, while a stock VPT run writes the two CSVs
-unprefixed and a watershed run names its boundaries `watershed_micron_space.parquet`. Any
-of the three missing is an error, naming both alternatives.
+`merscope()` reads the first three natively through its `vpt_outputs` argument, so nothing
+is converted. They are named explicitly rather than by pointing the reader at the directory,
+because only the boundaries carry the segmentation method in their name: these are the names
+a Vizgen cellpose delivery uses, while a stock VPT run writes the two CSVs unprefixed and a
+watershed run names its boundaries `watershed_micron_space.parquet`. Any of the three
+missing is an error, naming both alternatives.
+
+The transcripts are not among them: `vpt_outputs` has no slot for them, and `merscope()`
+takes them from the region directory. VPT's copy is reachable only by staging it in over the
+region's, which is what this step does — and a VPT directory without one is an error too,
+since the store's points would carry no assignment while its cells are cellpose cells. A
+stock VPT run only writes that file when asked; step 1a always does.
 
 That the boundaries are an error rather than a warning is for the reason it is in step 1:
 the reader only warns, and a store with no polygons is not a thing to discover in step 5.
 The polygons themselves are already in micron space, so unlike the pre-VPT HDF5 form step 1
 converts, there is nothing to build.
 
-The one thing this step does fix is the same one step 1 does: a `cellpose_cell_metadata.csv`
-in a different row order than the counts is written out reordered, since `merscope()` hands
-both straight to AnnData.
+It fixes the same thing step 1 does, for the same reason: a `cellpose_cell_metadata.csv` in
+a different row order than the counts is written out reordered, since `merscope()` hands both
+straight to AnnData. Like step 1, the fix goes into a staged copy that symlinks everything it
+is not changing, so neither the instrument output nor the VPT output is modified.
 
 Which segmentation a store came from is not recoverable from its contents, so
 `table.uns["segmentation"]` and `table.uns["vpt_path"]` record it. Give the two stores
