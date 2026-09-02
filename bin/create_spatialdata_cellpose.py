@@ -30,8 +30,9 @@ from spatialdata_io import merscope
 
 from timer import timer, timing_summary
 
-# The function default, pinned here and recorded into the table below so downstream steps
-# read which plane was loaded instead of assuming it.
+# merscope()'s z_layers default, pinned so a library change cannot move the plane silently.
+# It selects the image alone: one per-stain mosaic TIFF set, read into the element
+# <slide>_<region>_z<n>. Recorded into the table below as provenance; nothing reads it back.
 Z_LAYER = 3
 
 # Keyed by the names merscope()'s vpt_outputs dict takes. These are the Vizgen delivery's

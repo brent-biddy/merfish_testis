@@ -32,9 +32,9 @@ from spatialdata_io import merscope
 
 from timer import timer, timing_summary
 
-# merscope()'s z_layers argument, pinned at its current default so a library change cannot
-# move the plane silently. Picks which per-stain mosaic TIFF set is read into the image
-# element <slide>_<region>_z<n>; the table below records it.
+# merscope()'s z_layers default, pinned so a library change cannot move the plane silently.
+# It selects the image alone: one per-stain mosaic TIFF set, read into the element
+# <slide>_<region>_z<n>. Recorded into the table below as provenance; nothing reads it back.
 Z_LAYER = 3
 
 # The plane the HDF5 conversion reads, and the ZIndex it stamps on the parquet. Not a
