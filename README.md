@@ -478,8 +478,11 @@ id into `table.obs["sample"]`, and the notebook takes each section's id from ins
 object, so the two land as neighbouring sections of a single document with no edit to the
 notebook and no collision in `results/`.
 
-`error: true` is not set, so a failing cell fails the render rather than leaving an error
-slide. Still worth inspecting the deck: `unzip -q reports/<dir>/celltype_report.pptx` and
+`error: true` is not set, so an uncaught failure fails the render and its exit code. The
+sample loop catches its own, though: a store that will not open, one missing an obs column
+an earlier step should have written, or one slide that raises all draw into the document
+and the other samples still render. So the exit code answers "did setup work", not "is the
+deck complete" — inspect it either way: `unzip -q reports/<dir>/celltype_report.pptx` and
 check the slide count and titles.
 
 ## Layout

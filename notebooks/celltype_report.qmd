@@ -26,6 +26,9 @@ format:
     reference-doc: ouhsc_ppt_template.pptx
 execute:
   warning: false
+  # error: true is deliberately not set. The sample loop catches its own failures and draws
+  # them, so what is left uncaught is setup -- nothing staged, a missing import -- which
+  # should fail the render and its exit code rather than publish an empty deck.
 ---
 
 ::: {.content-hidden when-format="pptx"}
@@ -58,7 +61,9 @@ RESOLUTION = 1.0
 # it. A cluster that misses it is called Ambiguous rather than named on a split vote.
 PURITY_THRESHOLD = 0.70
 
-# The reference template is 16:9 at 10 x 5.625in; leave room for a slide title.
+# The reference template is 16:9 at 10 x 5.625in; leave room for a slide title. Every
+# figure takes the width from here even when its height is its own, so a template change
+# moves all of them together.
 FIGSIZE = (9.0, 4.3)
 
 # A VPT-derived cell_metadata.csv carries volume alone, where a full MERSCOPE one also has
@@ -83,6 +88,22 @@ AMBIGUOUS_COLOR = "#cccccc"
 
 V1_COLUMN = f"leiden_res_{RESOLUTION:.2f}_v1"
 V2_COLUMN = f"leiden_res_{RESOLUTION:.2f}_v2"
+
+# The obs columns this document reads, and the step that writes each. A store from an older
+# pipeline otherwise fails partway into a slide with a KeyError naming the column but not
+# where it comes from, once per sample. The corr_<cell type> columns are not listed:
+# annotate_celltypes writes them alongside cell_type_per_cell, one per reference type, so
+# their names are not known until the store is open.
+REQUIRED_OBS = {
+    "sample": "create_spatialdata or create_spatialdata_cellpose",
+    "volume": "create_spatialdata or create_spatialdata_cellpose",
+    "n_counts": "cluster_spatialdata_gpu",
+    "n_genes": "cluster_spatialdata_gpu",
+    V1_COLUMN: "cluster_spatialdata_gpu",
+    "cell_type_per_cell": "annotate_celltypes",
+}
+# A QC metric with no row above would be checked by nothing and fail inside a slide.
+assert set(QC_METRICS) <= set(REQUIRED_OBS)
 
 # No dpi here: it is set per format in the frontmatter, and a value in rcParams would win
 # over it, since this cell runs after quarto injects its own.
@@ -187,7 +208,8 @@ def qc_sample_slide(adata, sample):
 
     frame = adata.obs[list(QC_METRICS)]
 
-    fig, axes = plt.subplots(1, len(QC_METRICS), figsize=(9.0, 3.0), constrained_layout=True)
+    fig, axes = plt.subplots(1, len(QC_METRICS), figsize=(FIGSIZE[0], 3.0),
+                             constrained_layout=True)
     for ax, (column, label) in zip(axes, QC_METRICS.items()):
         sns.violinplot(data=frame, y=column, color="#5DB85D", cut=0, density_norm="width",
                        inner="box", inner_kws=VIOLIN_INNER, linewidth=0.5, ax=ax)
@@ -270,7 +292,7 @@ def qc_violin_slide(adata, sample):
     order = list(adata.obs[V2_COLUMN].cat.categories)
     frame = adata.obs[list(QC_METRICS) + [V2_COLUMN]]
 
-    fig, axes = plt.subplots(len(QC_METRICS), 1, figsize=(9.0, 5.0), sharex=True)
+    fig, axes = plt.subplots(len(QC_METRICS), 1, figsize=(FIGSIZE[0], 5.0), sharex=True)
     for ax, (column, label) in zip(axes, QC_METRICS.items()):
         sns.violinplot(data=frame, x=V2_COLUMN, y=column, order=order, hue=V2_COLUMN,
                        legend=False, cut=0, density_norm="width", linewidth=0.4,
@@ -316,7 +338,7 @@ def correlation_umap_slide(coords, correlations, sample):
     ncols = 4
     nrows = int(np.ceil(correlations.shape[1] / ncols))
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(9.0, 2.2 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(FIGSIZE[0], 2.2 * nrows), squeeze=False)
     for ax, cell_type in zip(axes.ravel(), correlations.columns):
         values = correlations[cell_type].to_numpy()
         order = np.argsort(values)          # high-correlating cells drawn on top
@@ -480,7 +502,7 @@ def flagged_umap_slide(adata, sample, flagged):
     ncols = min(4, len(flagged))
     nrows = int(np.ceil(len(flagged) / ncols))
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(9.0, 2.4 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(FIGSIZE[0], 2.4 * nrows), squeeze=False)
     for ax, cluster in zip(axes.ravel(), flagged):
         # One category, everything else NaN, which scanpy draws in na_color -- the rest of
         # the sample in grey without a second scatter.
@@ -522,7 +544,7 @@ def resolve_cluster_slide(adata, correlations, sample, cluster, colors):
     fig, axes = plt.subplot_mosaic(
         [["umap"] * len(QC_METRICS) + ["scatter"] * len(QC_METRICS),
          [metric for metric in QC_METRICS for _ in range(2)]],
-        figsize=(9.0, 6.0), height_ratios=[1.5, 1], constrained_layout=True,
+        figsize=(FIGSIZE[0], 6.0), height_ratios=[1.5, 1], constrained_layout=True,
     )
 
     # The cluster's own cells coloured by their per-cell call, everything else NaN, which
@@ -586,21 +608,40 @@ def annotation_table_slide(summary):
 ```{python}
 for path in ZARRS:
     # ── read one sample, with the counts matrix left on disk ──────────────────────────
-    # read_lazy keeps X a dask array and no slide reads a value out of it. obs and var
-    # must be brought into memory: read_lazy returns them as xarray-backed Dataset2D,
-    # which anndata's own strings_to_categoricals cannot handle, and every scanpy
-    # plotting call hits it. See scverse/anndata#981 -- expect these to become
-    # unnecessary.
-    adata = ad.experimental.read_lazy(f"{path}/tables/table")
-    adata.obs = adata.obs.to_memory()
-    adata.var = adata.var.to_memory()
+    # Its own try, and the only section headed by a filename: a store that will not open
+    # has no sample id to head the section with. Uncaught, it would abort the cell and
+    # take every later sample with it.
+    try:
+        # read_lazy keeps X a dask array and no slide reads a value out of it. obs and var
+        # must be brought into memory: read_lazy returns them as xarray-backed Dataset2D,
+        # which anndata's own strings_to_categoricals cannot handle, and every scanpy
+        # plotting call hits it. See scverse/anndata#981 -- expect these to become
+        # unnecessary.
+        adata = ad.experimental.read_lazy(f"{path}/tables/table")
+        adata.obs = adata.obs.to_memory()
+        adata.var = adata.var.to_memory()
 
-    # The two embeddings the slides draw, for the same reason: read_lazy leaves them lazy
-    # and sc.pl.umap indexes them with a tuple of dimensions, which a lazy array cannot
-    # take. Only these two -- obsm also holds the blank-probe counts as a frame, which
-    # np.asarray flattens to nothing.
-    for key in ("X_umap", "spatial"):
-        adata.obsm[key] = np.asarray(adata.obsm[key])
+        # The two embeddings the slides draw, for the same reason: read_lazy leaves them
+        # lazy and sc.pl.umap indexes them with a tuple of dimensions, which a lazy array
+        # cannot take. Only these two -- obsm also holds the blank-probe counts as a
+        # frame, which np.asarray flattens to nothing.
+        for key in ("X_umap", "spatial"):
+            adata.obsm[key] = np.asarray(adata.obsm[key])
+    except Exception:
+        display(Markdown(f"# {path.name}"))
+        display(Markdown(f"```\n{traceback.format_exc()}\n```"))
+        continue
+
+    missing = [column for column in REQUIRED_OBS if column not in adata.obs]
+    if missing:
+        display(Markdown(f"# {path.name}"))
+        display(Markdown(
+            "This store is missing obs columns this report reads:\n\n"
+            + "\n".join(f"- `{column}`, written by {REQUIRED_OBS[column]}"
+                        for column in missing)
+        ))
+        del adata
+        continue
 
     # From inside the object: the workflow stages under indexed names, so the filename is
     # not a reliable source for it.
@@ -693,9 +734,10 @@ for path in ZARRS:
 
         # The document's cell type, which every figure below reads.
         called_types = sorted({call for call in calls.values() if call != AMBIGUOUS})
+        cell_type_order = called_types + [AMBIGUOUS]          # Ambiguous last in the legend
         adata.obs["cell_type"] = (
             adata.obs[V1_COLUMN].map(calls).astype("category")
-            .cat.set_categories(called_types + [AMBIGUOUS])   # Ambiguous last in the legend
+            .cat.set_categories(cell_type_order)
         )
 
         # Inner join on the cell id, so a boundary without a surviving cell is dropped.
@@ -731,8 +773,8 @@ for path in ZARRS:
         (correlation_umap_slide, (adata.obsm["X_umap"], correlations, sample)),
         (correlation_heatmap_slide, (correlation_panels, sample)),
         (composition_slide, (composition, settled, sample)),
-        (celltype_umap_slide, (adata, sample, list(adata.obs["cell_type"].cat.categories), colors)),
-        (celltype_spatial_slide, (boundaries, sample, list(adata.obs["cell_type"].cat.categories), colors)),
+        (celltype_umap_slide, (adata, sample, cell_type_order, colors)),
+        (celltype_spatial_slide, (boundaries, sample, cell_type_order, colors)),
     ]
     if flagged:
         slides.append((flagged_umap_slide, (adata, sample, flagged)))
