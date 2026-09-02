@@ -3,16 +3,16 @@
 prep_cellpose_vpt.py - Convert a bespoke cellpose segmentation of a MERSCOPE region to
 the three VPT output files create_spatialdata_cellpose.py reads.
 
-The segmentation this reads is not a VPT run. It is the lab's own cellpose pipeline
-(area_cellpose.py per FOV, merge.py to stitch), which writes numpy arrays rather than the
-CSVs and parquet merscope() expects. This step writes those, so the store is built by the
-same reader as every other sample and nothing downstream learns a second input format.
+Not a VPT run: this is the lab's own cellpose pipeline (area_cellpose.py per FOV, merge.py
+to stitch), which writes numpy arrays where merscope() wants CSVs and a parquet. Writing
+those here keeps one reader downstream.
 
 Inputs, all in the merged segmentation directory:
 
     labels.npy                  (7, height, width) uint32 raw labels, full mosaic pixels
     <sample>-cellp-label-map.npz    raw label -> compact cell id, indexed by label - 1
     <sample>-cell-by-gene.npz   counts, row 0 is background
+    <sample>-slicee.pkl         per-label bounding boxes, merge.py's find_objects output
     cell-coms.npz               (z, y, x) centre per cell, mosaic pixels
     cell-vols.npz               voxels per cell
 
@@ -24,18 +24,13 @@ None of the index conventions are recoverable from the files, so, from merge.py:
     volume     = cell_vols[compact_id - 1]
 
 label_map is indexed by `label - 1` because merge.py builds it over ndi.find_objects
-output, whose element i describes label i + 1. Indexing it by the label instead is off by
-one wherever a label is absent, which is silent: it names a cell with its neighbour's
-counts. The join is checked against cell-vols before anything is written.
+output, whose element i describes label i + 1. Indexing by the label instead is off by one
+wherever a label is absent, silently: it gives a cell its neighbour's counts. check_volumes
+is what catches that before anything is written.
 
-A cell gets its boundary from whichever z plane it covers most, since the segmentation is
-3D over 7 planes and a store holds one. The plane is written per cell rather than fixed,
-so a cell centred at the top or bottom of the section still has a polygon; which plane
-each came from lands in the table as obs["z_plane"]. Every polygon is written with
-ZIndex 0 because merscope() keeps only that value.
-
-Gene names come from the region's own cell_by_gene.csv header: the counts array is bare
-integers, and its columns are that file's gene order.
+The segmentation is 3D over 7 planes and a store holds one, so each cell's boundary comes
+from the plane it covers most; a cell centred near the top or bottom of the section still
+gets one, and which plane lands in obs["z_plane"].
 
 Writes <outdir>/cellpose_{cell_by_gene.csv,cell_metadata.csv,micron_space.parquet} plus a
 timing TSV. Point create_spatialdata_cellpose.py --vpt_path at <outdir>.
@@ -63,14 +58,13 @@ from timer import timer, timing_summary
 # is written at 0 whichever plane it was taken from.
 BOUNDARY_Z_INDEX = 0
 
-# Spacing between the mosaic z planes. The MERSCOPE records the pixel size but not this,
-# so it cannot be read from the region; it is the instrument's setting for these runs, and
-# is what merge.py's anisotropy constant (1.5 * 9.29 / scale_divisor) also assumes. Only
-# the volume column depends on it -- get it wrong and volumes scale, nothing else moves.
+# Mosaic z spacing. The MERSCOPE records the pixel size but not this, so it cannot be read
+# from the region; merge.py's anisotropy constant assumes the same. Only the volume column
+# depends on it: wrong here, volumes scale and nothing else moves.
 Z_STEP_MICRONS = 1.5
 
-# The names create_spatialdata_cellpose.py looks for. VPT prefixes its outputs with the
-# segmentation method and that step names all three explicitly; these match.
+# The names create_spatialdata_cellpose.py looks for: a Vizgen cellpose delivery's, where
+# all three carry the method. A stock VPT run prefixes only the boundaries.
 OUTPUT_NAMES = {
     "cell_by_gene": "cellpose_cell_by_gene.csv",
     "cell_metadata": "cellpose_cell_metadata.csv",
@@ -95,13 +89,7 @@ def find_one(directory, suffix):
 
 
 def load_segmentation(cellpose_dir):
-    """Read the merged segmentation arrays and check the joins hold.
-
-    Returns (labels, label_map, counts, centres, volumes). The volume check is exact: the
-    voxels a label occupies in the raster must equal what merge.py recorded for the cell
-    it maps to. Anything else means the arrays are not from one run, or the index
-    convention above has changed, and the store would be silently mislabelled.
-    """
+    """Read the merged segmentation arrays, checking they agree on how many cells there are."""
     labels = np.load(cellpose_dir / "labels.npy", mmap_mode="r")
     label_map = np.load(find_one(cellpose_dir, LABEL_MAP_SUFFIX))["label_map"]
     counts = np.load(find_one(cellpose_dir, COUNTS_SUFFIX))["cbg"]
@@ -128,8 +116,8 @@ def load_segmentation(cellpose_dir):
 def plane_areas(labels, n_labels):
     """Return an (n planes, n labels + 1) array of pixels per raw label per z plane.
 
-    One pass per plane rather than per cell: the raster is tens of GB and reading it a
-    plane at a time is sequential, where cropping 166k cells out of it is not.
+    A plane at a time, not a cell at a time: the raster is tens of GB, and per-plane reads
+    it in the order it is stored.
     """
     areas = np.zeros((labels.shape[0], n_labels + 1), dtype=np.int64)
     for z in range(labels.shape[0]):
@@ -156,11 +144,7 @@ def check_volumes(areas, label_map, volumes):
 
 
 def pixel_to_micron_transform(region_dir):
-    """Return the affine taking mosaic pixels to microns.
-
-    The MERSCOPE writes the micron-to-pixel direction; the segmentation is in pixels, so
-    it is the inverse that is wanted here.
-    """
+    """Return the affine taking mosaic pixels to microns, inverting the region's own."""
     path = region_dir / "images" / "micron_to_mosaic_pixel_transform.csv"
     if not path.exists():
         raise FileNotFoundError(
@@ -181,9 +165,8 @@ def to_microns(rows, columns, transform):
 def cell_polygon(mask, y_offset, x_offset, transform):
     """Return the MultiPolygon of a boolean cell mask, in microns, or None.
 
-    Padded before tracing so a cell touching the edge of its own bounding box still
-    closes. A cell segmented into several pieces on this plane traces as several contours;
-    fewer than three vertices is not a ring and shapely raises on those.
+    Padded before tracing so a cell touching its bounding box still closes. Several pieces
+    on one plane trace as several contours; under three vertices is not a ring.
     """
     contours = find_contours(np.pad(mask, 1), 0.5)
 
@@ -204,11 +187,7 @@ def cell_polygon(mask, y_offset, x_offset, transform):
 
 
 def build_boundaries(labels, slices, label_map, best_plane, transform):
-    """Trace one polygon per cell, taking each from the plane it covers most.
-
-    Walks a plane at a time and traces the cells assigned to it, so the raster is read in
-    the order it is stored rather than jumped around once per cell.
-    """
+    """Trace one polygon per cell, each from the plane it covers most, a plane at a time."""
     entity_ids = []
     geometries = []
     planes = []
@@ -295,8 +274,7 @@ def main():
 
     transform = pixel_to_micron_transform(region_dir)
 
-    # merge.py already ran find_objects over the whole volume and pickled the result;
-    # reuse it rather than spend the pass rebuilding it.
+    # merge.py already ran find_objects over the volume and pickled it; reuse, do not rebuild.
     slicee_path = find_one(cellpose_dir, "-slicee.pkl")
     with open(slicee_path, "rb") as handle:
         slices = pickle.load(handle)
@@ -311,8 +289,8 @@ def main():
 
     check_volumes(areas, label_map, volumes)
 
-    # The plane a cell covers most. Cells absent everywhere cannot happen -- a label only
-    # exists because it has voxels -- but argmax would quietly return 0 if one did.
+    # A label only exists because it has voxels, so none is absent everywhere -- but argmax
+    # would quietly answer 0 if one were.
     per_label = areas[:, 1:]
     best_plane = per_label.argmax(axis=0)
     best_plane[label_map == 0] = -1
@@ -323,8 +301,8 @@ def main():
         )
     print(f"Traced {len(boundaries):,} cell boundaries.")
 
-    # Everything is written for the cells that got a polygon, in one order, because
-    # merscope() hands the counts and the metadata straight to AnnData.
+    # One order for all three, and only cells that got a polygon: merscope() hands the counts
+    # and the metadata straight to AnnData, which requires their indexes to match.
     entity_ids = boundaries["EntityID"].to_numpy()
     order = np.argsort(entity_ids)
     entity_ids = entity_ids[order]
@@ -339,8 +317,8 @@ def main():
             centres[entity_ids - 1, 1], centres[entity_ids - 1, 2], transform
         )
         bounds = boundaries.geometry.bounds.to_numpy()[order]
-        # Voxels are what merge.py counted; a Vizgen cell_metadata.csv holds cubic
-        # microns, and everything downstream reads this column expecting those.
+        # merge.py counted voxels; a Vizgen cell_metadata.csv holds cubic microns, which is
+        # what everything downstream reads this column expecting.
         voxel_microns = abs(np.linalg.det(transform[:2, :2])) * Z_STEP_MICRONS
         metadata = pd.DataFrame(
             {
@@ -353,8 +331,7 @@ def main():
                 "min_y": bounds[:, 1],
                 "max_x": bounds[:, 2],
                 "max_y": bounds[:, 3],
-                # Which plane this cell's boundary was taken from; the polygons all carry
-                # ZIndex 0 because that is the only value merscope() keeps.
+                # Which plane the boundary came from; the parquet itself is all ZIndex 0.
                 "z_plane": cell_planes.loc[entity_ids].to_numpy(),
             }
         ).set_index("EntityID")
