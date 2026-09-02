@@ -4,12 +4,19 @@ Analysis of Vizgen MERSCOPE (MERFISH) data from human testis.
 
 ## Setup
 
-There is no project-specific environment. Everything in `bin/` runs in the shared
-`python_spatial` container, the same image the other pipeline repos use:
+There is no project-specific environment. Everything in `bin/` runs in a shared container,
+and `nextflow.config` names two: a CPU image for every step, and `python_spatial` for the
+one process that declares `label 'gpu'`.
 
 ```bash
-apptainer exec docker://babiddy755/python_spatial:1.2.0 bin/create_spatialdata.py --help
+apptainer exec oras://ghcr.io/brent-biddy/python_cpu-sif:1.0.0 bin/create_spatialdata.py --help
+
+apptainer exec docker://babiddy755/python_spatial:1.2.0 bin/cluster_spatialdata_gpu.py --help
 ```
+
+The CPU image is published as an `oras://` artifact, which is already a SIF, so a pull
+skips the OCI-to-SIF conversion the `docker://` form pays for. The GPU step is on
+`python_spatial` only while `python_gpu` cannot be pulled on OSCER.
 
 ## Running the pipeline
 
@@ -25,9 +32,17 @@ nextflow run main.nf -profile wsl --samplesheet assets/samplesheet.csv
 
 Steps are selected by name; `steps.nf` chains nothing, so any step can be rerun on its own.
 `main.nf` calls the same module workflows in order — an example of the shape rather than a
-settled analysis. Because every step writes the next one's samplesheet into `results/<run_id>/`,
-a chained run leaves the same breadcrumbs a stepwise one does: run the whole thing, then re-run
-a single step from what it wrote.
+settled analysis. Because every step writes the next one's samplesheet into
+`results/<run_id>/`, a chained run leaves the same breadcrumbs a stepwise one does: run the
+whole thing, then re-run a single step from what it wrote.
+
+The same modules serve both entry scripts because every step's workflow takes its input in
+either shape: a samplesheet, which is what `steps.nf` passes, or a channel already carrying
+one tuple per sample, which is what the previous step emits inside `main.nf`. Neither entry
+script needs a module of its own.
+
+`main.nf` renders `notebooks/celltype_report.qmd` and does not read `--notebook`; only the
+`steps.nf` render steps take one.
 
 `nextflow run .` resolves to `main.nf`, so the default answer to "run this repo" is an
 analysis rather than a usage error.
@@ -41,7 +56,7 @@ the defaults with it.
 
 | Invocation | What you get |
 |---|---|
-| *(none)* | local executor, the container, no GPU access |
+| *(none)* | local executor, the containers, no GPU access |
 | `-profile wsl` | the above, plus how a `label 'gpu'` process reaches a card under WSL2 |
 | `-profile oscer` | SLURM, scratch and OURdisk paths, the GPU queue |
 
@@ -63,13 +78,24 @@ step can stage everything into one directory rather than numbered `input*/` subd
 A `--group_by` run puts the column in the name — `<sample>.<column>.centroids.h5ad`, not
 `<sample>.centroids.<column>.h5ad` — so one glob takes both.
 
+Step 1a is the one exception: its three files are named for what `merscope()` looks for, not
+for the sample and step. They are read by name from a directory, never staged flat, so
+there is nothing for them to collide with.
+
 Output publishes beside the code, so a result sits next to the analysis that produced it.
 Each invocation gets its own directory under `results/`, named by a timestamp `run_id`:
 
 ```
-<repo>/results/<run_id>/    published step output, not committed
+<repo>/results/<run_id>/<sample>/<step>/    published step output, not committed
+<repo>/results/<run_id>/<step>_samplesheet.csv    the handoff sheet, one per step that ran
+<repo>/results/<run_id>/pipeline_info/    nextflow's own timeline and report
 <repo>/reports/<name>/    one directory per render, committed and pushed
 ```
+
+Artifacts nest by sample and step; the handoff sheets sit at the top of the run directory,
+being one file per step rather than one per sample. A sheet's path column names the
+published location, not the work dir, so a step re-run from a sheet reads a file that still
+exists after the run that wrote it is gone.
 
 The work dir and the image cache stay out of the repo, being large, churny, and
 reproducible: under `~/merfish_testis_work/` by default, and
@@ -77,9 +103,10 @@ reproducible: under `~/merfish_testis_work/` by default, and
 are created no matter how recently they were read, so nothing durable can live there — on
 `oscer` the image cache sits on OURdisk for that reason.
 
-Because runs never share an output directory, a `-stub` run cannot overwrite a real run's
-results. Pass `--run_id <name>` to pin the directory, which `-resume` needs across
-launches.
+The work dir is dropped when a run succeeds, so `-resume` works after a failure and not
+after a success. Because runs never share an output directory, a `-stub` run cannot
+overwrite a real run's results; pass `--run_id <name>` to pin the directory, which
+`-resume` needs across launches.
 
 On `oscer` the repo itself lives on OURdisk, which is permanent and large but **never
 backed up**. The code and `reports/` are safe because they are pushed to GitHub, and
@@ -128,7 +155,7 @@ draw a tissue figure from, which is not a thing to discover in step 5.
 The script is a plain CLI and runs outside Nextflow unchanged:
 
 ```bash
-apptainer exec docker://babiddy755/python_spatial:1.2.0 \
+apptainer exec oras://ghcr.io/brent-biddy/python_cpu-sif:1.0.0 \
     python bin/create_spatialdata.py \
         --sample testis_01 \
         --path data/raw/testis_01 \
@@ -188,15 +215,18 @@ nextflow run steps.nf -profile oscer --step prep_cellpose_vpt \
     --samplesheet assets/samplesheet_cellpose_prep.csv
 
 nextflow run steps.nf -profile oscer --step create_spatialdata_cellpose \
-    --samplesheet <run>/results/prep_cellpose_vpt_samplesheet.csv
+    --samplesheet results/<run_id>/prep_cellpose_vpt_samplesheet.csv
 ```
 
 The handoff sheet it writes is already in step 1b's `sample, path, vpt_path` shape,
 forwarding the region unchanged and naming this step's output as the VPT directory.
 
-The label raster is about 7 GB per plane and the step holds one plane, the counts and the
-traced polygons at once, so `nextflow.config` gives the process 64 GB on `oscer` rather
-than letting the retry ladder find it. It is too large for the default memory request.
+This is the memory-hungriest step: the label raster is about 7 GB per plane and the step
+holds one plane, the counts and the traced polygons at once, measured at a peak near 20 GB.
+It has no override in `nextflow.config`, so on `oscer` it takes the retry ladder — 32 GB on
+the first attempt and 32 GB more on each of the three retries — and locally it takes the
+16 GB default, which is not enough. It has never been run on `oscer`; the first run that
+does is worth recording the real peak from.
 
 ### 1b. create_spatialdata_cellpose
 
@@ -218,14 +248,20 @@ directory supplies the count matrix, the cell metadata and the boundary polygons
 ```
 
 `merscope()` reads this natively through its `vpt_outputs` argument, so nothing is
-converted. VPT prefixes its outputs with the segmentation method, which is why all three
-files are named explicitly rather than by pointing the reader at the directory — the
-directory form finds the boundaries and misses both CSVs. A watershed run names its
-boundaries `watershed_micron_space.parquet`; this step reads the cellpose ones.
+converted. All three files are named explicitly rather than by pointing the reader at the
+directory, because only the boundaries carry the segmentation method in their name: these
+are the names a Vizgen cellpose delivery uses, while a stock VPT run writes the two CSVs
+unprefixed and a watershed run names its boundaries `watershed_micron_space.parquet`. Any
+of the three missing is an error, naming both alternatives.
 
-The boundaries are already polygons in micron space, so unlike the pre-VPT HDF5 form step 1
-converts, there is nothing to build. A missing boundary file is an error here for the same
-reason it is there: the reader only warns.
+That the boundaries are an error rather than a warning is for the reason it is in step 1:
+the reader only warns, and a store with no polygons is not a thing to discover in step 5.
+The polygons themselves are already in micron space, so unlike the pre-VPT HDF5 form step 1
+converts, there is nothing to build.
+
+The one thing this step does fix is the same one step 1 does: a `cellpose_cell_metadata.csv`
+in a different row order than the counts is written out reordered, since `merscope()` hands
+both straight to AnnData.
 
 Which segmentation a store came from is not recoverable from its contents, so
 `table.uns["segmentation"]` and `table.uns["vpt_path"]` record it. Give the two stores
@@ -250,6 +286,12 @@ Leiden's own numbers say nothing about size and are not comparable between two
 resolutions, so a cluster named in a figure or a hand-written annotation is named by its
 v1 id.
 
+Cells are filtered on transcript count: `--min_counts` drops the low tail, 20 by default,
+and `--max_counts_quantile` cuts doublets and segmentation merges off the top, disabled by
+default. Both are recorded into `uns`, and the quantile is taken before the low cut so the
+threshold does not move with it. Neither is a Nextflow param — a run that wants other
+values runs the script directly.
+
 There is no highly-variable-gene selection — a MERFISH panel is a few hundred curated
 markers, so every gene is used. Genes are not filtered either.
 
@@ -259,7 +301,7 @@ process declares `label 'gpu'`; each site answers it.
 
 ```bash
 nextflow run steps.nf -profile wsl --step cluster_spatialdata_gpu \
-    --samplesheet <run>/results/create_spatialdata_samplesheet.csv
+    --samplesheet results/<run_id>/create_spatialdata_samplesheet.csv
 ```
 
 The samplesheet is the handoff sheet step 1 wrote.
@@ -280,11 +322,12 @@ captured. That cannot change which type is largest, so the calls are unaffected.
 of these per-cell calls, which is a judgment made by a person — the reference reports where
 a type would land, not that it was found.
 
-`--reference` selects the table; it defaults to the one in `assets/reference`.
+`--reference` selects the table; it defaults to
+`assets/reference/shami_human_testis_centroids.csv.gz`, the only one there.
 
 ```bash
 nextflow run steps.nf -profile wsl --step annotate_celltypes \
-    --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
+    --samplesheet results/<run_id>/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
 ### 4. create_centroids
@@ -302,18 +345,23 @@ would make a change to the centroid recipe re-run the GPU Leiden sweep.
 
 `--group_by <column>` sums over one named obs column instead of the sweep — cell type,
 once a later step has written it. Those runs are named for the column
-(`<sample>.<column>.centroids.h5ad`, and its own handoff sheet), so they publish beside a
-sweep run rather than displacing it and the step can be re-run for each grouping you want.
+(`<sample>.<column>.centroids.h5ad`, and `create_centroids_<column>_samplesheet.csv`), so
+they publish beside a sweep run rather than displacing it and the step can be re-run for
+each grouping you want.
+
+The handoff sheet is `sample,path,centroid_path`: it forwards the zarr this step read
+alongside the centroids it wrote, because a report wants both and only this step knows
+which zarr the centroids came from.
 
 A grouping that is a union of v1 clusters needs no run at all — sums are additive, so add
 the rows.
 
 ```bash
 nextflow run steps.nf -profile wsl --step create_centroids \
-    --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
+    --samplesheet results/<run_id>/cluster_spatialdata_gpu_samplesheet.csv
 
 nextflow run steps.nf -profile wsl --step create_centroids --group_by cell_type \
-    --samplesheet <run>/results/cluster_spatialdata_gpu_samplesheet.csv
+    --samplesheet results/<run_id>/cluster_spatialdata_gpu_samplesheet.csv
 ```
 
 ### 5. render_cohort and render_sample
@@ -322,8 +370,8 @@ Renders the notebook named by `--notebook`. Terminal steps — nothing consumes 
 
 Two steps, one workflow. The step name says how rows are grouped — `render_cohort` renders
 every row in one pass, `render_sample` renders one per row — and `--to` says which of the
-formats the notebook declares comes out of it. Omitting `--to` renders every declared format
-in one pass.
+formats the notebook declares comes out of it. It defaults to `pptx`, and one render is one
+format, so both packagings means running twice.
 
 They are separate because the right grouping differs by format. A markdown document is
 navigated by file, so fifteen samples in one page is an enormous scroll where a directory of
@@ -339,16 +387,16 @@ The notebook needs no conditional for this: it globs what was staged, so a cohor
 every sample and loops over them while a per-sample render finds one and loops once.
 
 The step knows nothing about what it is rendering. It requires only a `sample` column and
-stages every other column's path, one per directory; which of them a notebook wants, and
-what it does with them, is the notebook's own business. **A new report is therefore a new
+stages every other column's path; which of them a notebook wants, and what it does with
+them, is the notebook's own business. **A new report is therefore a new
 notebook and no Nextflow at all** — copy an existing `.qmd`, edit it, and render it.
 
-Staging is the input contract: the workflow drops each samplesheet path into its own
-flat beside the notebook and the notebook globs the step it wants, taking each
-sample's id from inside its object rather than from the staged filename. One directory per
-file because two samples publish their stores under the same name, and a step that names
-no columns cannot pattern its way around the collision. Adding a sample needs no edit to
-the notebook.
+Staging is the input contract: the workflow drops every samplesheet path flat beside the
+notebook and the notebook globs the step it wants — `*.annotate_celltypes.zarr`, not
+`*.zarr` — taking each sample's id from inside its object rather than from the staged
+filename. Flat works because `<sample>.<step>.<ext>` already makes every file distinct, so
+a step that names no columns needs no scheme to keep them apart. Adding a sample needs no
+edit to the notebook.
 
 `notebooks/celltype_report.qmd` is the report this pipeline has today: a cohort deck and a
 GitHub-readable document with a section per sample — its QC, the clustering, the per-cell
@@ -392,29 +440,28 @@ that. `--run_id` names a render when it deserves a name of its own:
 # One deck over the cohort.
 nextflow run steps.nf -profile wsl --step render_cohort --to pptx --run_id cellpose_cmp \
     --notebook notebooks/celltype_report.qmd \
-    --samplesheet <run>/results/create_centroids_samplesheet.csv
+    --samplesheet results/<earlier_run>/create_centroids_samplesheet.csv
 # -> reports/celltype_report_cellpose_cmp_pptx/celltype_report.pptx
 
-# The same samples as one browsable page each, from a notebook whose prose was rewritten
-# for that comparison.
+# The same samples as one browsable page each.
 nextflow run steps.nf -profile wsl --step render_sample --to gfm --run_id cellpose_cmp \
-    --notebook notebooks/celltype_report_cellpose.qmd \
-    --samplesheet <run>/results/create_centroids_samplesheet.csv
-# -> reports/celltype_report_cellpose_cellpose_cmp_gfm/<sample>/celltype_report_cellpose.md
+    --notebook notebooks/celltype_report.qmd \
+    --samplesheet results/<earlier_run>/create_centroids_samplesheet.csv
+# -> reports/celltype_report_cellpose_cmp_gfm/<sample>/celltype_report.md
 ```
 
-The second renders a copy of the first notebook, with its prose rewritten for that
-comparison. Commentary about one render belongs in the notebook it renders, next to the
-figure it is about — which is why a variant is a copied `.qmd` rather than a note injected
-from outside. The cost is that a fix to a shared figure has to land in each copy.
+A render whose prose is specific to one comparison is a copied `.qmd` rather than a note
+injected from outside, because commentary about a figure belongs next to the figure. The
+cost is that a fix to a shared figure has to land in each copy.
 
 One collision is left on purpose: the same format in both modes — `render_cohort --to gfm`
 alongside `render_sample --to gfm` — still shares a directory, since the grouping is not in
 the name. The pairing above avoids it; making it impossible would mean naming the grouping
 too, for a case nothing needs yet.
 
-Because no two renders share a directory, nothing overwrites anything — which also means
-`reports/` accumulates. Prune the ones not worth keeping before committing.
+Apart from that one case, no two renders share a directory, so nothing overwrites anything
+— which also means `reports/` accumulates. Prune the ones not worth keeping before
+committing.
 
 `reports/README.md` indexes the ones that were kept, and is what GitHub shows when anyone
 browses the directory. It is written by hand: a render cannot say what it was for, and a
@@ -444,11 +491,13 @@ nextflow.config  params, the defaults that always apply, and which site profiles
 conf/            one file per site: wsl and oscer state their difference
 bin/             all executable code
 modules/         one file per step: its process and its workflow
+modules/samplesheet.nf   the one shared helper: how a step reads its input
 notebooks/       report notebooks
 assets/          sample sheets, and the pptx template and lua filter a render needs
 assets/reference/  cell type centroids to annotate against; see each file's header
 data/raw/        raw instrument output (not committed)
-results/<run_id>/  published step output (not committed)
+results/<run_id>/<sample>/<step>/    published step output (not committed)
+results/<run_id>/<step>_samplesheet.csv    the handoff sheet each step writes
 reports/README.md  hand-written index of the renders worth keeping
 reports/<notebook>_<run_id>_<to>/    one directory per render: markdown and figures
                  committed, the deck not; render_sample nests one dir per sample
