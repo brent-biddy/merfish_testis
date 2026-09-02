@@ -49,6 +49,7 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
 from shapely.geometry import MultiPolygon, Polygon
 from skimage.measure import find_contours
 
@@ -181,9 +182,18 @@ def cell_polygon(mask, y_offset, x_offset, transform):
 
     if not parts:
         return None
-    # MultiPolygon even for a single part: merscope() calls MultiPolygon(x.geoms) on every
-    # row, and a bare Polygon has no .geoms.
-    return MultiPolygon(parts)
+
+    # A hole traces as its own contour, so a cell with one comes back as nested shells:
+    # invalid, and about half again too large. make_valid turns those into interior rings.
+    shape = shapely.make_valid(MultiPolygon(parts))
+
+    # MultiPolygon even for one piece: merscope() calls MultiPolygon(x.geoms) on every row,
+    # and a bare Polygon has no .geoms. make_valid returns one whenever the cell is single.
+    polygons = [part for part in getattr(shape, "geoms", [shape])
+                if part.geom_type == "Polygon"]
+    if not polygons:
+        return None
+    return MultiPolygon(polygons)
 
 
 def build_boundaries(labels, slices, label_map, best_plane, transform):
@@ -300,6 +310,15 @@ def main():
             labels, slices, label_map, best_plane, transform
         )
     print(f"Traced {len(boundaries):,} cell boundaries.")
+
+    # merscope() drops invalid geometries without warning, and the counts and metadata below
+    # are written for every row here -- so the store would name cells it has no boundary for.
+    invalid = int((~boundaries.geometry.is_valid).sum())
+    if invalid:
+        raise ValueError(
+            f"{invalid:,} of {len(boundaries):,} traced polygons are invalid. merscope() "
+            f"would drop them silently and leave their counts in the table."
+        )
 
     # One order for all three, and only cells that got a polygon: merscope() hands the counts
     # and the metadata straight to AnnData, which requires their indexes to match.
