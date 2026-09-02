@@ -3,32 +3,20 @@ title: "MERFISH testis — cell type annotation"
 subtitle: "One section per sample: clusters, per-cell calls, and what they compose to"
 author: "Brent Biddy"
 date: today
-# No kernel pinned. The images set JUPYTER_PATH to their own share directory, so `python3`
-# resolves to the image's environment rather than to a host kernelspec that Apptainer's $HOME
-# bind-mount makes visible. Pinning by name was the workaround for that leak, and it broke the
-# moment a step moved to a different image: the name did not exist there.
 format:
   gfm:
-    # The one figure setting that has to differ per format, so it lives here rather than
-    # in rcParams below. The committed copy is read in a ~900px column, where 200 dpi is
-    # four times the pixels the page can show; 144 stays sharp on a high-DPI screen and
-    # takes a third off the PNGs, which are what this repo carries forever.
     fig-dpi: 144
     toc: true
     toc-depth: 1
     filters:
       - fold-code.lua      # code folding, which quarto only does for HTML
   pptx:
-    # Projected full-screen, so it keeps the full resolution the gfm copy gives up.
     fig-dpi: 200
     slide-level: 2
     echo: false
     reference-doc: ouhsc_ppt_template.pptx
 execute:
   warning: false
-  # error: true is deliberately not set. The sample loop catches its own failures and draws
-  # them, so what is left uncaught is setup -- nothing staged, a missing import -- which
-  # should fail the render and its exit code rather than publish an empty deck.
 ---
 
 ::: {.content-hidden when-format="pptx"}
@@ -53,33 +41,25 @@ from matplotlib.ticker import NullFormatter, ScalarFormatter
 from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.spatial.distance import squareform
 
-# The resolution every figure below reads. A judgment made by looking at the clustering,
-# not a computation -- the sweep writes twenty and this picks one.
+# The sweep writes twenty; this is the one the document reads.
 RESOLUTION = 1.0
 
-# The share of a cluster's cells one cell type must take for the cluster to be settled on
-# it. A cluster that misses it is called Ambiguous rather than named on a split vote.
+# A cluster whose top share falls below this is called Ambiguous, not named on a split vote.
 PURITY_THRESHOLD = 0.70
 
-# The reference template is 16:9 at 10 x 5.625in; leave room for a slide title. Every
-# figure takes the width from here even when its height is its own, so a template change
-# moves all of them together.
+# The template is 16:9 at 10 x 5.625in, minus room for a slide title.
 FIGSIZE = (9.0, 4.3)
 
-# A VPT-derived cell_metadata.csv carries volume alone, where a full MERSCOPE one also has
-# transcript_count, solidity and anisotropy. Only the columns every sample has: n_counts is
-# the per-cell transcript total filter_cells wrote, which is what transcript_count is.
+# Only the columns every sample has: a VPT cell_metadata.csv carries volume alone. n_counts
+# is filter_cells' per-cell total, which is what transcript_count would have been.
 QC_METRICS = {
     "n_counts": "Transcripts",
     "n_genes": "Genes detected",
     "volume": "Cell volume",
 }
-# Log axes only where the metric really spans orders of magnitude. n_genes is not one:
-# it is capped by the panel, so it covers a single decade and a log axis there just
-# labels its minor ticks 2 x 10^1 and so on.
+# n_genes is capped by the panel, so it spans one decade and a log axis only clutters it.
 LOG_METRICS = ("n_counts", "volume")
 
-# Quartile box inside each violin, sized to stay legible at slide scale.
 VIOLIN_INNER = {"box_width": 2, "whis_width": 1, "marker": "o",
                 "markersize": 3.0, "markeredgecolor": "white"}
 
@@ -89,11 +69,8 @@ AMBIGUOUS_COLOR = "#cccccc"
 V1_COLUMN = f"leiden_res_{RESOLUTION:.2f}_v1"
 V2_COLUMN = f"leiden_res_{RESOLUTION:.2f}_v2"
 
-# The obs columns this document reads, and the step that writes each. A store from an older
-# pipeline otherwise fails partway into a slide with a KeyError naming the column but not
-# where it comes from, once per sample. The corr_<cell type> columns are not listed:
-# annotate_celltypes writes them alongside cell_type_per_cell, one per reference type, so
-# their names are not known until the store is open.
+# The obs columns this document reads, and the step that writes each. corr_<cell type> is
+# absent: annotate_celltypes writes those with cell_type_per_cell, named by the reference.
 REQUIRED_OBS = {
     "sample": "create_spatialdata or create_spatialdata_cellpose",
     "volume": "create_spatialdata or create_spatialdata_cellpose",
@@ -102,11 +79,10 @@ REQUIRED_OBS = {
     V1_COLUMN: "cluster_spatialdata_gpu",
     "cell_type_per_cell": "annotate_celltypes",
 }
-# A QC metric with no row above would be checked by nothing and fail inside a slide.
+# A QC metric with no row above would go unchecked.
 assert set(QC_METRICS) <= set(REQUIRED_OBS)
 
-# No dpi here: it is set per format in the frontmatter, and a value in rcParams would win
-# over it, since this cell runs after quarto injects its own.
+# No dpi here: this cell runs after quarto injects the frontmatter's, and would win over it.
 plt.rcParams.update({
     "font.size": 8.5,
     "axes.labelsize": 8.5,
@@ -116,20 +92,14 @@ plt.rcParams.update({
     "legend.fontsize": 7,
 })
 
-# Staging is the input contract: the workflow drops every samplesheet path flat beside the
-# notebook, and globbing them is how this notebook declares what it needs -- the render step
-# names no columns and knows nothing about zarrs.
-#
-# The glob names a step, not an extension. Every artifact is <sample>.<step>.<ext>, so
-# *.annotate_celltypes.zarr asks for the annotated stores specifically rather than whichever
-# zarrs happen to be staged -- which is what makes flat staging safe when a report wants two
-# steps' outputs at once.
+# The render step stages every samplesheet path flat and names no columns, so globbing is
+# how this notebook asks. The glob names a step, not an extension: two steps' outputs stage
+# side by side.
 ZARRS = sorted(Path(".").glob("*.annotate_celltypes.zarr"))
 if not ZARRS:
     raise FileNotFoundError("No *.annotate_celltypes.zarr staged next to the notebook.")
 
-# The centroid stores, keyed on the sample each carries, so a zarr finds its own rather
-# than trusting the two staged lists to be in the same order. A --group_by run names them
+# Keyed on the sample inside each store, not on staging order. A --group_by run names them
 # <sample>.<column>.centroids.h5ad, which the same glob takes.
 CENTROIDS = {}
 for path in sorted(Path(".").glob("*.centroids.h5ad")):
@@ -162,17 +132,12 @@ def log_axis(ax):
     """A log y axis labelled in plain numbers rather than powers of ten."""
     ax.set_yscale("log")
     ax.yaxis.set_major_formatter(ScalarFormatter())
-    # Minor ticks are what a sub-two-decade log axis labels as 2 x 10^1; the majors alone
-    # are enough to read a violin against.
+    # A sub-two-decade log axis labels its minor ticks 2 x 10^1; the majors are enough.
     ax.yaxis.set_minor_formatter(NullFormatter())
 
 
 def diagonal_order(frame):
-    """Column order that puts each row's strongest column on the diagonal.
-
-    Walks the rows in order taking each one's best column; a column already placed is
-    skipped, and any column no row leads with is appended.
-    """
+    """Column order that puts each row's strongest column on the diagonal."""
     order = []
     for row in frame.index:
         best = frame.loc[row].idxmax()
@@ -182,8 +147,7 @@ def diagonal_order(frame):
 
 
 def markdown_table(frame):
-    """A pipe table. Written out because DataFrame.to_markdown needs tabulate, which the
-    container does not carry."""
+    """A pipe table. Hand-rolled: to_markdown needs tabulate, absent from the container."""
     header = "| " + " | ".join(frame.columns) + " |"
     rule = "|" + "|".join("---" for _ in frame.columns) + "|"
     rows = ["| " + " | ".join(str(value) for value in row) + " |" for row in frame.to_numpy()]
@@ -262,8 +226,7 @@ def cluster_similarity_slide(similarity, leaf_order, sample):
         "Dendrogram order (v2)": [str(rank) for rank in range(1, len(leaf_order) + 1)],
     }
 
-    # vmin at the matrix minimum, not 0: the values sit in a narrow band well above zero
-    # that a fixed floor would flatten.
+    # Not 0: the values sit in a narrow band well above it that a fixed floor would flatten.
     low = float(ordered.to_numpy().min())
 
     fig, axes = plt.subplots(1, 2, figsize=FIGSIZE, constrained_layout=True)
@@ -373,8 +336,7 @@ def correlation_heatmap_slide(panels, sample):
 
     fig, axes = plt.subplots(1, len(panels), figsize=FIGSIZE, constrained_layout=True)
     for ax, (title, matrix) in zip(axes, panels.items()):
-        # No cell annotations here, unlike the other heatmaps: three panels of eleven
-        # columns leaves no room for legible numbers.
+        # No cell annotations: three panels of eleven columns leaves no room for numbers.
         sns.heatmap(matrix, cmap="viridis", linewidths=0.5, linecolor="white",
                     xticklabels=True, yticklabels=True,
                     cbar_kws={"shrink": 0.6, "pad": 0.02}, ax=ax)
@@ -407,8 +369,7 @@ def composition_slide(composition, settled, sample):
     ]
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
-    # Three decimals, so a share just under the threshold does not round to it and read as
-    # a square that should have been boxed.
+    # Three decimals: at two, a share just under the threshold rounds up to it unboxed.
     image = heatmap(ax, labelled, vmin=0.0, vmax=1.0, fmt="{:.3f}")
     for row, cluster in enumerate(composition.index):
         for column, cell_type in enumerate(composition.columns):
@@ -458,9 +419,7 @@ def celltype_spatial_slide(boundaries, sample, order, colors):
         "shows noise. This is the check the embedding cannot give."
     ))
 
-    # Sized to the tissue's own aspect, so the embedded image is all content: anything with
-    # an equal aspect renders as a sliver, or in a band of whitespace, in a figure whose
-    # proportions do not match the data.
+    # Sized to the tissue's own aspect: a fixed one renders it as a sliver in whitespace.
     left, bottom, right, top = boundaries.total_bounds
     aspect = (top - bottom) / (right - left)
     height = min(4.6, 8.0 * aspect)
@@ -474,9 +433,7 @@ def celltype_spatial_slide(boundaries, sample, order, colors):
                     label=cell_type)
 
     ax.set_aspect("equal")
-    # micron_to_mosaic_pixel_transform has a positive y scale, so micron y increases down
-    # the mosaic. Matplotlib draws y up, which would mirror the tissue against the DAPI
-    # image and the vzg viewer.
+    # micron y increases down the mosaic; matplotlib draws y up, mirroring the tissue.
     ax.invert_yaxis()
     ax.set_xticks([])
     ax.set_yticks([])
@@ -504,8 +461,7 @@ def flagged_umap_slide(adata, sample, flagged):
 
     fig, axes = plt.subplots(nrows, ncols, figsize=(FIGSIZE[0], 2.4 * nrows), squeeze=False)
     for ax, cluster in zip(axes.ravel(), flagged):
-        # One category, everything else NaN, which scanpy draws in na_color -- the rest of
-        # the sample in grey without a second scatter.
+        # Everything else NaN, which scanpy draws in na_color: grey without a second scatter.
         mask = adata.obs[V1_COLUMN] == cluster
         adata.obs["_flagged"] = pd.Categorical(mask.map({True: cluster}).where(mask))
         adata.uns["_flagged_colors"] = ["#d62728"]
@@ -539,25 +495,21 @@ def resolve_cluster_slide(adata, correlations, sample, cluster, colors):
     present = list(present[present > 0].index)
     contested = present[:2]
 
-    # Two columns per metric along the bottom, so the umap and the scatter above split the
-    # row evenly however many metrics the sample carries.
+    # Two columns per metric, so the umap and scatter above split the row evenly.
     fig, axes = plt.subplot_mosaic(
         [["umap"] * len(QC_METRICS) + ["scatter"] * len(QC_METRICS),
          [metric for metric in QC_METRICS for _ in range(2)]],
         figsize=(FIGSIZE[0], 6.0), height_ratios=[1.5, 1], constrained_layout=True,
     )
 
-    # The cluster's own cells coloured by their per-cell call, everything else NaN, which
-    # scanpy draws in na_color -- the rest of the sample in grey for free.
+    # Everything outside the cluster NaN, drawn in na_color: the sample in grey for free.
     adata.obs["_resolve"] = pd.Categorical(
         calls.astype(str).where(in_cluster), categories=present
     )
     adata.uns["_resolve_colors"] = [colors[t] for t in present]
 
-    # No legend: a margin one does not fit a mosaic panel and breaks the layout, and an
-    # on-data one collides when a cluster's cells call many types. The colours are the
-    # per-cell calls in the same palette as the slide above, and the scatter beside this
-    # one names the two that matter.
+    # No legend: a margin one breaks the mosaic layout and an on-data one collides. The
+    # palette is the slide above's, and the scatter beside names the two types that matter.
     sc.pl.umap(adata, color="_resolve", ax=axes["umap"], show=False, frameon=True,
                legend_loc=None, na_color="#e6e6e6",
                title=f"Cluster {cluster} (n={int(in_cluster.sum()):,})")
@@ -608,23 +560,18 @@ def annotation_table_slide(summary):
 ```{python}
 for path in ZARRS:
     # ── read one sample, with the counts matrix left on disk ──────────────────────────
-    # Its own try, and the only section headed by a filename: a store that will not open
-    # has no sample id to head the section with. Uncaught, it would abort the cell and
-    # take every later sample with it.
+    # Its own try: a store that will not open has no sample id to head its section with.
+    # Uncaught here, it would abort the cell and take every later sample with it.
     try:
-        # read_lazy keeps X a dask array and no slide reads a value out of it. obs and var
-        # must be brought into memory: read_lazy returns them as xarray-backed Dataset2D,
-        # which anndata's own strings_to_categoricals cannot handle, and every scanpy
-        # plotting call hits it. See scverse/anndata#981 -- expect these to become
-        # unnecessary.
+        # X stays lazy; no slide reads a value out of it. obs and var cannot: read_lazy
+        # returns them as Dataset2D, which strings_to_categoricals and every scanpy
+        # plotting call choke on. scverse/anndata#981.
         adata = ad.experimental.read_lazy(f"{path}/tables/table")
         adata.obs = adata.obs.to_memory()
         adata.var = adata.var.to_memory()
 
-        # The two embeddings the slides draw, for the same reason: read_lazy leaves them
-        # lazy and sc.pl.umap indexes them with a tuple of dimensions, which a lazy array
-        # cannot take. Only these two -- obsm also holds the blank-probe counts as a
-        # frame, which np.asarray flattens to nothing.
+        # sc.pl.umap indexes these with a tuple of dimensions, which a lazy array refuses.
+        # Only these two: np.asarray flattens obsm's blank-probe frame to nothing.
         for key in ("X_umap", "spatial"):
             adata.obsm[key] = np.asarray(adata.obsm[key])
     except Exception:
@@ -643,16 +590,13 @@ for path in ZARRS:
         del adata
         continue
 
-    # From inside the object: the workflow stages under indexed names, so the filename is
-    # not a reliable source for it.
+    # The sample id comes from inside the object, never the staged filename.
     sample = str(adata.obs["sample"].iloc[0])
     display(Markdown(f"# {sample}"))
 
     try:
-        # The segmented cell boundaries, for the tissue slide. read_zarr leaves images and
-        # points lazy; shapes come into memory, which is what drawing outlines needs. There
-        # are more of them than there are cells -- the clustering filter dropped some -- so
-        # the join below is what pairs them back up.
+        # read_zarr leaves images and points lazy; shapes come into memory, which is what
+        # outlines need. More boundaries than cells -- the clustering filter dropped some.
         shapes = spatialdata.read_zarr(path).shapes
         boundaries = shapes[next(key for key in shapes if key.endswith("_polygons"))]
 
@@ -665,10 +609,8 @@ for path in ZARRS:
         colors[AMBIGUOUS] = AMBIGUOUS_COLOR   # the absence of a call, not a class of its own
 
         # ── how alike the clusters are, in gene space ─────────────────────────────────
-        # From the centroid store, so the notebook never opens a counts matrix. Its X is
-        # summed CP10K, so the mean-of-normalized profile is X / n_cells, then log1p --
-        # the same quantity the reference centroids hold. Every panel gene, since a
-        # MERFISH panel is curated markers and has no variable subset to take.
+        # X is summed CP10K, so X / n_cells then log1p is what the reference centroids
+        # hold. From the centroids, so the notebook never opens a counts matrix.
         store = CENTROIDS[sample]
         store = store[store.obs["grouping"].astype(str) == V1_COLUMN]
         centroids = pd.DataFrame(
@@ -678,19 +620,16 @@ for path in ZARRS:
         )
         similarity = centroids.T.corr(method="spearman")
 
-        # squareform first: linkage picks its input by shape, so a square matrix handed
-        # over directly is read as observations x features and answers a different
-        # question with no error. checks=False because floating point can leave the
-        # diagonal a hair off zero. optimal_ordering flips each merge to put the most
-        # similar leaves adjacent, which is what makes the block diagonal readable.
+        # squareform first: linkage picks its input by shape, so a square matrix is read
+        # as observations x features and answers a different question with no error.
+        # checks=False for the hair off zero floating point leaves on the diagonal;
+        # optimal_ordering for the leaf adjacency that makes the block diagonal readable.
         distance = squareform(1 - similarity.to_numpy(), checks=False)
         leaf_order = [similarity.index[leaf] for leaf in
                       leaves_list(linkage(distance, method="average", optimal_ordering=True))]
 
-        # v2 is position down the dendrogram, so neighbouring numbers are
-        # transcriptionally adjacent. Render-only, and never the key a call is written
-        # against -- it moves whenever the clustering or the gene set changes, which is
-        # what v1 is fixed for.
+        # v2 is position down the dendrogram, so neighbours are transcriptionally adjacent.
+        # Render-only: it moves with the clustering, which is what v1 is fixed against.
         v2_of = {v1: str(rank) for rank, v1 in enumerate(leaf_order, start=1)}
         adata.obs[V2_COLUMN] = (
             adata.obs[V1_COLUMN].map(v2_of).astype("category")
@@ -698,10 +637,8 @@ for path in ZARRS:
         )
 
         # ── the per-cell correlations averaged within each cluster ────────────────────
-        # No new correlation: annotate_celltypes already wrote one column per cell type,
-        # and this is their mean per cluster. Where the composition below counts argmax
-        # votes, this keeps how strongly a cluster leans, including cells that voted
-        # elsewhere.
+        # The mean of annotate_celltypes' per-cell columns, no new correlation. Where the
+        # composition below counts argmax votes, this keeps how strongly a cluster leans.
         profiles = correlations.groupby(adata.obs[V1_COLUMN], observed=True).mean()
         profiles = profiles.loc[leaf_order]
         profiles.index = [f"{v1} ({rank})" for rank, v1 in enumerate(leaf_order, start=1)]
@@ -721,8 +658,7 @@ for path in ZARRS:
         # ── what the per-cell calls compose to inside each cluster ────────────────────
         counts = pd.crosstab(adata.obs[V1_COLUMN], adata.obs["cell_type_per_cell"])
         composition = counts.div(counts.sum(axis=1), axis=0).loc[leaf_order]
-        # Its own ordering rather than the correlation heatmap's: a cluster's largest
-        # share and its strongest mean correlation need not be the same cell type.
+        # Its own ordering: a cluster's largest share and strongest mean correlation differ.
         composition = composition[diagonal_order(composition)]
 
         settled = composition.max(axis=1) >= PURITY_THRESHOLD
@@ -732,7 +668,6 @@ for path in ZARRS:
         }
         flagged = [cluster for cluster in leaf_order if not settled[cluster]]
 
-        # The document's cell type, which every figure below reads.
         called_types = sorted({call for call in calls.values() if call != AMBIGUOUS})
         cell_type_order = called_types + [AMBIGUOUS]          # Ambiguous last in the legend
         adata.obs["cell_type"] = (
@@ -740,7 +675,6 @@ for path in ZARRS:
             .cat.set_categories(cell_type_order)
         )
 
-        # Inner join on the cell id, so a boundary without a surviving cell is dropped.
         boundaries = boundaries.join(adata.obs["cell_type"], how="inner")
 
         summary_rows = []
@@ -782,9 +716,7 @@ for path in ZARRS:
                    for cluster in flagged]
     slides.append((annotation_table_slide, (summary,)))
 
-    # Something must catch, because the loop is a single cell: an uncaught raise would
-    # drop every later sample too. Per slide, since each draws its own figure and one
-    # failing says nothing about the others.
+    # Per slide: each draws its own figure, and one failing says nothing about the others.
     for slide, arguments in slides:
         try:
             slide(*arguments)
