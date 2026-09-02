@@ -5,13 +5,11 @@ create_spatialdata.py - Convert a Vizgen MERSCOPE output directory to a SpatialD
 Reads a MERSCOPE region directory (cell_by_gene.csv, cell_metadata.csv, the
 cell boundaries, the detected transcripts, and the mosaic images) and writes it
 out as a SpatialData Zarr store. No cells or genes are filtered here; filtering
-happens in later steps.
+happens in later steps, which read the store rather than the MERSCOPE directory.
 
 Boundaries written as a pre-VPT cell_boundaries/ directory of per-FOV HDF5 files
 are converted to the cell_boundaries.parquet the reader expects; a region with
 neither is an error rather than a store with no polygons in it.
-
-Later steps read the Zarr store rather than the MERSCOPE directory.
 
 Writes <outdir>/<sample>.create_spatialdata.zarr plus a timing TSV.
 
@@ -59,9 +57,9 @@ def convert_hdf5_boundaries(boundaries_dir, output_path):
                     continue
 
                 # A cell segmented into several pieces on this plane has p_0, p_1, ..., so
-                # parts become one MultiPolygon. Skipped when every part is degenerate or
-                # the plane group is empty -- fewer than three vertices is not a ring and
-                # shapely raises on those.
+                # parts become one MultiPolygon. Under three vertices cannot close into a
+                # ring, and shapely raises on one or two of them; a cell left with no parts
+                # at all is skipped.
                 parts = []
                 for part in plane.values():
                     coordinates = part["coordinates"][0]

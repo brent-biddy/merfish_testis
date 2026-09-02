@@ -60,9 +60,10 @@ def vpt_outputs(vpt_dir, staging_dir):
     indexes to match exactly; VPT does not guarantee it writes them in the same order. A
     reordered copy is written to staging_dir rather than over the input.
 
-    A missing boundary file is an error here. merscope() only warns and loads no polygons,
-    leaving a store that clusters and annotates perfectly well and has nothing to draw a
-    tissue figure from, which is not a thing to discover in the report step.
+    A missing file is an error here, whichever of the three it is, because merscope() only
+    warns. Without the boundaries it loads no polygons, leaving a store that clusters and
+    annotates perfectly well and has nothing to draw a tissue figure from; without either
+    CSV it loads no table at all. Neither is a thing to discover several steps later.
     """
     paths = {key: vpt_dir / name for key, name in VPT_FILES.items()}
 
@@ -107,7 +108,7 @@ def staged_region_dir(region_dir, vpt_dir, staging_dir):
         )
 
     # Symlink the rest of the region — the mosaic images are far too large to copy — and
-    # link only what is being replaced, so the instrument output is never modified.
+    # link VPT's transcripts in over the region's own, so neither input is modified.
     staging_dir.mkdir(parents=True, exist_ok=True)
     for entry in region_dir.iterdir():
         if entry.name != TRANSCRIPTS_FILE:
