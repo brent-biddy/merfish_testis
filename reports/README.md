@@ -7,7 +7,7 @@ directory can be renamed or moved without breaking anything in it.
 The markdown and the figures are committed, being what GitHub renders. The deck is not,
 being the same content in a format git cannot diff; rebuild it by re-rendering.
 
-A render publishes into `reports/<notebook>_<run_id>_<to>/`, one format per render, and a
+A render publishes into `reports/<qmd>_<run_id>_<to>/`, one format per render, and a
 `render_sample` run nests one directory per sample inside that. `--to` defaults to `pptx`,
 which is gitignored; `--to gfm` produces the copy this directory commits.
 

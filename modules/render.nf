@@ -9,7 +9,7 @@ process QUARTO_RENDER {
     tuple val(output_dir), path(staged)
     val publish_dir
     val format
-    path notebook
+    path qmd
     path 'ouhsc_ppt_template.pptx'
     path 'fold-code.lua'
 
@@ -18,14 +18,14 @@ process QUARTO_RENDER {
 
     script:
     """
-    quarto render ${notebook} --to ${format} --output-dir ${output_dir}
+    quarto render ${qmd} --to ${format} --output-dir ${output_dir}
     """
 
     stub:
     """
-    mkdir -p ${output_dir}/${notebook.baseName}_files
-    touch ${output_dir}/${notebook.baseName}.pptx
-    touch ${output_dir}/${notebook.baseName}.md
+    mkdir -p ${output_dir}/${qmd.baseName}_files
+    touch ${output_dir}/${qmd.baseName}.pptx
+    touch ${output_dir}/${qmd.baseName}.md
     """
 }
 

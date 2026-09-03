@@ -41,7 +41,7 @@ either shape: a samplesheet, which is what `steps.nf` passes, or a channel alrea
 one tuple per sample, which is what the previous step emits inside `main.nf`. Neither entry
 script needs a module of its own.
 
-`main.nf` renders `notebooks/celltype_report.qmd` and does not read `--notebook`; only the
+`main.nf` renders `notebooks/celltype_report.qmd` and does not read `--qmd`; only the
 `steps.nf` render steps take one.
 
 `nextflow run .` resolves to `main.nf`, so the default answer to "run this repo" is an
@@ -125,7 +125,7 @@ filename prefixes.
 | 2 | `bin/cluster_spatialdata_gpu.py` | `sample, path` | zarr from step 1 or 1b | `<sample>.<step>.zarr` |
 | 3 | `bin/annotate_celltypes.py` | `sample, path` | zarr from step 2 | `<sample>.<step>.zarr` |
 | 4 | `bin/create_centroids.py` | `sample, path` | zarr from step 2 or 3 | `<sample>.centroids.h5ad` |
-| 5 | `--notebook`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the notebook globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<notebook>_<run_id>_<to>/`, one directory per render — `render_sample` nests one per sample inside it |
+| 5 | `--qmd`, e.g. `notebooks/celltype_report.qmd` | `sample`, plus whatever path columns the .qmd globs | for `celltype_report.qmd`: zarr from step 3 and centroids from step 4 | `reports/<qmd>_<run_id>_<to>/`, one directory per render — `render_sample` nests one per sample inside it |
 
 ### 1. create_spatialdata
 
@@ -386,11 +386,11 @@ nextflow run steps.nf -profile wsl --step create_centroids --group_by cell_type 
 
 ### 5. render_cohort and render_sample
 
-Renders the notebook named by `--notebook`. Terminal steps — nothing consumes them.
+Renders the .qmd named by `--qmd`. Terminal steps — nothing consumes them.
 
 Two steps, one workflow. The step name says how rows are grouped — `render_cohort` renders
 every row in one pass, `render_sample` renders one per row — and `--to` says which of the
-formats the notebook declares comes out of it. It defaults to `pptx`, and one render is one
+formats the .qmd declares comes out of it. It defaults to `pptx`, and one render is one
 format, so both packagings means running twice.
 
 They are separate because the right grouping differs by format. A markdown document is
@@ -443,10 +443,10 @@ These are the only steps that publish into the repo. They write `reports/`, not
 markdown and its figures are committed, being what GitHub renders, and the deck is
 gitignored, being the same content in a format git cannot diff.
 
-Each render gets its own directory, `reports/<notebook>_<run_id>_<to>/`, holding the
+Each render gets its own directory, `reports/<qmd>_<run_id>_<to>/`, holding the
 document, the figure directory and the deck together. Quarto writes all three into
 `--output-dir` and the document's links are relative to it, so the directory moves as a unit
-and renders on GitHub wherever it sits. The notebook leads the name so a listing groups a
+and renders on GitHub wherever it sits. The .qmd leads the name so a listing groups a
 report type together; the run id names the render invocation, not the results tree it read —
 those are different runs, since a render takes a samplesheet pointing at some earlier run's
 published paths, and what a render was built from is in that samplesheet. The format is part
@@ -459,13 +459,13 @@ that. `--run_id` names a render when it deserves a name of its own:
 ```bash
 # One deck over the cohort.
 nextflow run steps.nf -profile wsl --step render_cohort --to pptx --run_id cellpose_cmp \
-    --notebook notebooks/celltype_report.qmd \
+    --qmd notebooks/celltype_report.qmd \
     --samplesheet results/<earlier_run>/create_centroids_samplesheet.csv
 # -> reports/celltype_report_cellpose_cmp_pptx/celltype_report.pptx
 
 # The same samples as one browsable page each.
 nextflow run steps.nf -profile wsl --step render_sample --to gfm --run_id cellpose_cmp \
-    --notebook notebooks/celltype_report.qmd \
+    --qmd notebooks/celltype_report.qmd \
     --samplesheet results/<earlier_run>/create_centroids_samplesheet.csv
 # -> reports/celltype_report_cellpose_cmp_gfm/<sample>/celltype_report.md
 ```
@@ -522,7 +522,7 @@ data/raw/        raw instrument output (not committed)
 results/<run_id>/<sample>/<step>/    published step output (not committed)
 results/<run_id>/<step>_samplesheet.csv    the handoff sheet each step writes
 reports/README.md  hand-written index of the renders worth keeping
-reports/<notebook>_<run_id>_<to>/    one directory per render: markdown and figures
+reports/<qmd>_<run_id>_<to>/    one directory per render: markdown and figures
                  committed, the deck not; render_sample nests one dir per sample
 ```
 
