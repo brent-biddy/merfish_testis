@@ -5,18 +5,17 @@ Analysis of Vizgen MERSCOPE (MERFISH) data from human testis.
 ## Setup
 
 There is no project-specific environment. Everything in `bin/` runs in a shared container,
-and `nextflow.config` names two: a CPU image for every step, and `python_spatial` for the
+and `nextflow.config` names two: a CPU image for every step, and a GPU image for the
 one process that declares `label 'gpu'`.
 
 ```bash
 apptainer exec oras://ghcr.io/brent-biddy/python_cpu-sif:1.0.0 bin/create_spatialdata.py --help
 
-apptainer exec docker://babiddy755/python_spatial:1.2.0 bin/cluster_spatialdata_gpu.py --help
+apptainer exec oras://ghcr.io/brent-biddy/python_gpu-sif:1.0.1 bin/cluster_spatialdata_gpu.py --help
 ```
 
-The CPU image is published as an `oras://` artifact, which is already a SIF, so a pull
-skips the OCI-to-SIF conversion the `docker://` form pays for. The GPU step is on
-`python_spatial` only while `python_gpu` cannot be pulled on OSCER.
+Both are published as `oras://` artifacts, which are already SIFs, so a pull skips the
+OCI-to-SIF conversion a `docker://` reference would pay for.
 
 ## Running the pipeline
 
