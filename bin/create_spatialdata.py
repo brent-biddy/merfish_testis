@@ -95,10 +95,11 @@ def staged_region_dir(region_dir, staging_dir):
     applies.
     """
     # Only the ids are needed; usecols keeps the whole counts matrix out of memory.
+    # dtype={0: str} rather than dtype=str: a scalar dtype does not reach index_col.
     counts_index = pd.read_csv(
-        region_dir / "cell_by_gene.csv", index_col=0, usecols=[0], dtype=str
+        region_dir / "cell_by_gene.csv", index_col=0, usecols=[0], dtype={0: str}
     ).index
-    metadata = pd.read_csv(region_dir / "cell_metadata.csv", index_col=0, dtype=str)
+    metadata = pd.read_csv(region_dir / "cell_metadata.csv", index_col=0, dtype={0: str})
     reorder = not counts_index.equals(metadata.index)
 
     parquet = region_dir / "cell_boundaries.parquet"

@@ -76,10 +76,11 @@ def vpt_outputs(vpt_dir, staging_dir):
         )
 
     # Only the ids are needed, and cellpose_cell_by_gene.csv is hundreds of MB of counts.
+    # dtype={0: str} rather than dtype=str: a scalar dtype does not reach index_col.
     counts_index = pd.read_csv(
-        paths["cell_by_gene"], index_col=0, usecols=[0], dtype=str
+        paths["cell_by_gene"], index_col=0, usecols=[0], dtype={0: str}
     ).index
-    metadata = pd.read_csv(paths["cell_metadata"], index_col=0, dtype=str)
+    metadata = pd.read_csv(paths["cell_metadata"], index_col=0, dtype={0: str})
 
     if not counts_index.equals(metadata.index):
         print(f"Reordering cell metadata to match the counts ({len(counts_index):,} cells).")
